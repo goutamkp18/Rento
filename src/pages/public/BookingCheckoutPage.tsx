@@ -26,6 +26,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Input } from '../../components/ui/Input';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
+import { useStudentSubscription } from '../../context/StudentSubscriptionContext';
 import { listingsService } from '../../services/listingsService';
 import { bookingService } from '../../services/bookingService';
 import { PGListing, Room, Booking } from '../../types';
@@ -37,6 +38,7 @@ export const BookingCheckoutPage: React.FC = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { user, isAuthenticated } = useAuth();
+  const { hasStudentSubscription, openPaywall } = useStudentSubscription();
   const { showToast } = useToast();
 
   const [listing, setListing] = useState<PGListing | null>(null);
@@ -101,6 +103,13 @@ export const BookingCheckoutPage: React.FC = () => {
         type: 'error',
         title: 'Missing information',
         message: 'Please complete all required fields before proceeding with payment.',
+      });
+      return;
+    }
+
+    if (!hasStudentSubscription) {
+      openPaywall('complete your online bed reservation and advance payment', () => {
+        handlePayAdvance(simulateFailure);
       });
       return;
     }
@@ -543,6 +552,18 @@ export const BookingCheckoutPage: React.FC = () => {
                     <span>Bed Lock Guarantee</span>
                     <span className="text-brand-300 font-semibold">Instant</span>
                   </div>
+                  {!hasStudentSubscription && (
+                    <div className="flex justify-between items-center text-amber-300 pt-1 border-t border-navy-800">
+                      <span>Student Access Pass</span>
+                      <button
+                        type="button"
+                        onClick={() => openPaywall('activate full student pass')}
+                        className="font-bold underline text-amber-300 hover:text-white"
+                      >
+                        Activate Pass (₹ 9)
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 <div className="pt-3 border-t border-navy-800 flex justify-between items-baseline">

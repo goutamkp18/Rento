@@ -404,5 +404,36 @@ DROP POLICY IF EXISTS "Owners can view bookings for their properties" ON public.
 CREATE POLICY "Owners can view bookings for their properties" ON public.bookings
   FOR SELECT USING (auth.uid() = owner_id);
 
+-- ==============================================================================
+-- 10. STUDENT SUBSCRIPTIONS TABLE (₹9 Access Pass)
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS public.student_subscriptions (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  student_id TEXT NOT NULL UNIQUE,
+  student_name TEXT,
+  student_email TEXT,
+  plan_id TEXT NOT NULL DEFAULT 'student_pass',
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'expired', 'cancelled', 'payment_failed')),
+  base_price NUMERIC NOT NULL DEFAULT 7.63,
+  gst_amount NUMERIC NOT NULL DEFAULT 1.37,
+  total_price NUMERIC NOT NULL DEFAULT 9.00,
+  payment_method TEXT DEFAULT 'upi',
+  payment_reference TEXT,
+  start_date TIMESTAMPTZ DEFAULT NOW(),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.student_subscriptions ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Anyone can select student subscriptions" ON public.student_subscriptions;
+CREATE POLICY "Anyone can select student subscriptions" ON public.student_subscriptions
+  FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Anyone can insert/update student subscriptions" ON public.student_subscriptions;
+CREATE POLICY "Anyone can insert/update student subscriptions" ON public.student_subscriptions
+  FOR ALL USING (true);
+
+
 
 

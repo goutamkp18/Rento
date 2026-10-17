@@ -208,21 +208,21 @@ export const PlanSelectionPage: React.FC = () => {
                 </tr>
                 <tr>
                   <td className="py-3 px-4 font-semibold text-white">Monthly Base Price</td>
-                  <td className="py-3 px-4">₹499.00</td>
-                  <td className="py-3 px-4 font-semibold text-white">₹999.00</td>
-                  <td className="py-3 px-4 font-semibold text-white">₹1,999.00</td>
+                  <td className="py-3 px-4">₹49.00</td>
+                  <td className="py-3 px-4 font-semibold text-white">₹99.00</td>
+                  <td className="py-3 px-4 font-semibold text-white">₹199.00</td>
                 </tr>
                 <tr>
                   <td className="py-3 px-4 font-semibold text-white">Illustrative GST (18%)</td>
-                  <td className="py-3 px-4">₹89.82</td>
-                  <td className="py-3 px-4">₹179.82</td>
-                  <td className="py-3 px-4">₹359.82</td>
+                  <td className="py-3 px-4">₹8.82</td>
+                  <td className="py-3 px-4">₹17.82</td>
+                  <td className="py-3 px-4">₹35.82</td>
                 </tr>
                 <tr>
                   <td className="py-3 px-4 font-semibold text-white">Final Monthly Total</td>
-                  <td className="py-3 px-4 font-bold text-white">₹588.82</td>
-                  <td className="py-3 px-4 font-bold text-emerald-400">₹1,178.82</td>
-                  <td className="py-3 px-4 font-bold text-emerald-400">₹2,358.82</td>
+                  <td className="py-3 px-4 font-bold text-white">₹57.82</td>
+                  <td className="py-3 px-4 font-bold text-emerald-400">₹116.82</td>
+                  <td className="py-3 px-4 font-bold text-emerald-400">₹234.82</td>
                 </tr>
                 <tr>
                   <td className="py-3 px-4">Room &amp; Bed Vacancy Matrix</td>

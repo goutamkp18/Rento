@@ -15,6 +15,7 @@ import {
   Building2
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { useStudentSubscription } from '../../context/StudentSubscriptionContext';
 import { useFavourites } from '../../context/FavouritesContext';
 import { useCompare } from '../../context/CompareContext';
 import { PGListing, Enquiry, Booking } from '../../types';
@@ -26,10 +27,11 @@ import { downloadBookingPdf, formatINR } from '../../utils/receiptGenerator';
 import { ListingCard } from '../../components/listings/ListingCard';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
-import { Download, FileText, CheckCircle2 as CheckCircleIcon, Loader2 } from 'lucide-react';
+import { Download, FileText, CheckCircle2 as CheckCircleIcon, Loader2, Lock, Unlock, Zap } from 'lucide-react';
 
 export const StudentDashboardPage: React.FC = () => {
   const { user } = useAuth();
+  const { hasStudentSubscription, openPaywall } = useStudentSubscription();
   const { favouriteCount } = useFavourites();
   const { compareCount } = useCompare();
   const navigate = useNavigate();
@@ -123,6 +125,54 @@ export const StudentDashboardPage: React.FC = () => {
             Search
           </Button>
         </form>
+      </div>
+
+      {/* Student Pass Status Banner */}
+      <div className={`p-4 sm:p-5 rounded-2xl border transition-all shadow-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 ${
+        hasStudentSubscription
+          ? 'bg-emerald-950/40 border-emerald-500/30 text-white'
+          : 'bg-amber-950/30 border-amber-500/30 text-white'
+      }`}>
+        <div className="flex items-start sm:items-center gap-3.5">
+          <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+            hasStudentSubscription
+              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+              : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+          }`}>
+            {hasStudentSubscription ? <Unlock className="w-5 h-5" /> : <Lock className="w-5 h-5" />}
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm sm:text-base font-bold text-white">
+                {hasStudentSubscription ? '₹9 Student All-Access Pass: ACTIVE' : 'Free Explorer Mode (Limited Features)'}
+              </h3>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
+                hasStudentSubscription
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                  : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+              }`}>
+                {hasStudentSubscription ? 'Unlocked' : 'Locked Features'}
+              </span>
+            </div>
+            <p className="text-xs text-slate-300 mt-0.5 max-w-2xl">
+              {hasStudentSubscription
+                ? 'You have unlocked direct PG bookings, enquiries, live GPS / Google Maps locations, and side-by-side PG comparisons.'
+                : 'Queries, instant booking, live PG location / directions, and PG comparisons are locked. Unlock everything for just ₹9 (₹7.63 + 18% GST).'}
+            </p>
+          </div>
+        </div>
+
+        {!hasStudentSubscription && (
+          <Button
+            size="sm"
+            variant="primary"
+            className="shrink-0 text-xs font-bold shadow-md shadow-brand-500/20"
+            onClick={() => openPaywall('unlock booking, direct enquiries, compare PGs, and live PG location')}
+            leftIcon={<Zap className="w-3.5 h-3.5" />}
+          >
+            Unlock All for ₹9
+          </Button>
+        )}
       </div>
 
       {/* Metric Stat Cards */}

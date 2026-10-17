@@ -24,7 +24,8 @@ import {
   Maximize2,
   Eye,
   X,
-  ExternalLink
+  ExternalLink,
+  Lock
 } from 'lucide-react';
 import { PGListing, Room, Booking } from '../../types';
 import { listingsService } from '../../services/listingsService';
@@ -32,6 +33,7 @@ import { useFavourites } from '../../context/FavouritesContext';
 import { useCompare } from '../../context/CompareContext';
 import { useToast } from '../../context/ToastContext';
 import { useAuth } from '../../context/AuthContext';
+import { useStudentSubscription } from '../../context/StudentSubscriptionContext';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
 import { EnquiryModal } from '../../components/listings/EnquiryModal';
@@ -42,6 +44,7 @@ export const ListingDetailsPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { isAuthenticated, setIntendedDestination } = useAuth();
+  const { hasStudentSubscription, openPaywall } = useStudentSubscription();
   const { isFavourite, toggleFavourite } = useFavourites();
   const { isComparing, addToCompare, removeFromCompare } = useCompare();
   const { showToast } = useToast();
@@ -146,6 +149,12 @@ export const ListingDetailsPage: React.FC = () => {
   };
 
   const handleCompareClick = () => {
+    if (!hasStudentSubscription) {
+      openPaywall('compare multiple PGs side-by-side', () => {
+        if (!isComp) addToCompare(listing);
+      });
+      return;
+    }
     if (isComp) {
       removeFromCompare(listing.id);
     } else {
@@ -154,6 +163,18 @@ export const ListingDetailsPage: React.FC = () => {
   };
 
   const openVisitModal = () => {
+    if (!hasStudentSubscription) {
+      openPaywall('schedule in-person room visits', () => {
+        if (!isAuthenticated) {
+          setIntendedDestination(`/pgs/${listing.id}`);
+          navigate(`/login?role=student&redirect=/pgs/${listing.id}`);
+          return;
+        }
+        setEnquiryMode('visit_request');
+        setIsEnquiryOpen(true);
+      });
+      return;
+    }
     if (!isAuthenticated) {
       setIntendedDestination(`/pgs/${listing.id}`);
       navigate(`/login?role=student&redirect=/pgs/${listing.id}`);
@@ -164,6 +185,18 @@ export const ListingDetailsPage: React.FC = () => {
   };
 
   const openEnquiryModal = () => {
+    if (!hasStudentSubscription) {
+      openPaywall('send direct inquiries & chat with the PG owner', () => {
+        if (!isAuthenticated) {
+          setIntendedDestination(`/pgs/${listing.id}`);
+          navigate(`/login?role=student&redirect=/pgs/${listing.id}`);
+          return;
+        }
+        setEnquiryMode('general');
+        setIsEnquiryOpen(true);
+      });
+      return;
+    }
     if (!isAuthenticated) {
       setIntendedDestination(`/pgs/${listing.id}`);
       navigate(`/login?role=student&redirect=/pgs/${listing.id}`);
@@ -253,23 +286,44 @@ export const ListingDetailsPage: React.FC = () => {
             <div className="flex flex-wrap items-center gap-2 mt-1.5">
               <p className="text-xs text-slate-400 flex items-center gap-1.5">
                 <MapPin className="w-3.5 h-3.5 text-brand-400 shrink-0" />
-                <span>{listing.address}, {listing.locality}, {listing.city} - {listing.postal_code}</span>
+                <span>
+                  {hasStudentSubscription
+                    ? `${listing.address}, ${listing.locality}, ${listing.city} - ${listing.postal_code}`
+                    : `${listing.locality}, ${listing.city} `}
+                  {!hasStudentSubscription && (
+                    <span className="text-[11px] text-amber-300 font-medium">
+                      (Street address locked)
+                    </span>
+                  )}
+                </span>
               </p>
-              <a
-                href={
-                  listing.google_maps_url ||
-                  `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-                    `${listing.name}, ${listing.address}, ${listing.locality}, ${listing.city}`
-                  )}`
-                }
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-brand-500/10 hover:bg-brand-500/20 text-brand-300 border border-brand-500/25 text-xs font-semibold transition-all hover:scale-105"
-                title="Open location in Google Maps"
-              >
-                <span>Google Maps</span>
-                <ExternalLink className="w-3 h-3 text-brand-400" />
-              </a>
+              {hasStudentSubscription ? (
+                <a
+                  href={
+                    listing.google_maps_url ||
+                    `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+                      `${listing.name}, ${listing.address}, ${listing.locality}, ${listing.city}`
+                    )}`
+                  }
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-brand-500/10 hover:bg-brand-500/20 text-brand-300 border border-brand-500/25 text-xs font-semibold transition-all hover:scale-105"
+                  title="Open location in Google Maps"
+                >
+                  <span>Google Maps</span>
+                  <ExternalLink className="w-3 h-3 text-brand-400" />
+                </a>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => openPaywall('view live Google Maps directions & exact address')}
+                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/25 text-xs font-semibold transition-all"
+                  title="Subscribe to ₹9 Student Pass to unlock Google Maps"
+                >
+                  <Lock className="w-3 h-3 text-amber-400" />
+                  <span>Google Maps (₹ 9 Pass)</span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -449,35 +503,64 @@ export const ListingDetailsPage: React.FC = () => {
               )}
 
               {/* Location & Directions Button */}
-              <div className="mt-4 pt-4 border-t border-navy-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-2xl bg-navy-950/70 border border-navy-800">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-xl bg-brand-500/10 border border-brand-500/20 flex items-center justify-center text-brand-400 shrink-0">
-                    <MapPin className="w-5 h-5" />
+              {hasStudentSubscription ? (
+                <div className="mt-4 pt-4 border-t border-navy-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-2xl bg-navy-950/70 border border-navy-800">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-xl bg-brand-500/10 border border-brand-500/20 flex items-center justify-center text-brand-400 shrink-0">
+                      <MapPin className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-white">Live Location &amp; Directions</h4>
+                      <p className="text-[11px] text-slate-400 truncate max-w-xs sm:max-w-md">
+                        {listing.landmark ? `${listing.landmark} • ` : ''}{listing.locality}, {listing.city}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h4 className="text-xs font-bold text-white">Live Location &amp; Directions</h4>
-                    <p className="text-[11px] text-slate-400 truncate max-w-xs sm:max-w-md">
-                      {listing.landmark ? `${listing.landmark} • ` : ''}{listing.locality}, {listing.city}
-                    </p>
-                  </div>
-                </div>
 
-                <a
-                  href={
-                    listing.google_maps_url ||
-                    `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-                      `${listing.name}, ${listing.address}, ${listing.locality}, ${listing.city}`
-                    )}`
-                  }
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold shadow-md shadow-brand-500/20 transition-all shrink-0"
-                >
-                  <MapPin className="w-3.5 h-3.5" />
-                  <span>Open in Google Maps</span>
-                  <ExternalLink className="w-3.5 h-3.5 ml-0.5" />
-                </a>
-              </div>
+                  <a
+                    href={
+                      listing.google_maps_url ||
+                      `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+                        `${listing.name}, ${listing.address}, ${listing.locality}, ${listing.city}`
+                      )}`
+                    }
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold shadow-md shadow-brand-500/20 transition-all shrink-0"
+                  >
+                    <MapPin className="w-3.5 h-3.5" />
+                    <span>Open in Google Maps</span>
+                    <ExternalLink className="w-3.5 h-3.5 ml-0.5" />
+                  </a>
+                </div>
+              ) : (
+                <div className="mt-4 pt-4 border-t border-navy-800 p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-navy-950 via-navy-900 to-brand-950/40 border border-brand-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-lg">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 shrink-0">
+                      <Lock className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                        <span>Exact Address &amp; Live Navigation Locked</span>
+                        <span className="text-[10px] px-2 py-0.5 rounded bg-brand-500/20 text-brand-300 border border-brand-500/30 font-bold">₹ 9 Pass</span>
+                      </h4>
+                      <p className="text-[11px] text-slate-400 mt-0.5 max-w-sm sm:max-w-md">
+                        Area: {listing.locality}, {listing.city}. Activate the ₹ 9 Student Access Pass to unlock street address, landmark, and Google Maps live directions.
+                      </p>
+                    </div>
+                  </div>
+
+                  <Button
+                    size="sm"
+                    variant="glow"
+                    className="text-xs font-bold py-2 px-3.5 shrink-0 shadow-md shadow-brand-500/25"
+                    leftIcon={<Lock className="w-3.5 h-3.5" />}
+                    onClick={() => openPaywall('view exact address, landmarks and live Google Maps directions')}
+                  >
+                    Unlock Location (₹ 9)
+                  </Button>
+                </div>
+              )}
             </div>
 
             {/* Room Types & Pricing Table */}
@@ -493,9 +576,14 @@ export const ListingDetailsPage: React.FC = () => {
                   <div
                     key={room.id}
                     onClick={() => {
-                      if (room.available_beds > 0) {
-                        navigate(`/book/${listing.id}?room=${room.id}`);
+                      if (room.available_beds <= 0) return;
+                      if (!hasStudentSubscription) {
+                        openPaywall('book beds & pay advance reservation', () => {
+                          navigate(`/book/${listing.id}?room=${room.id}`);
+                        });
+                        return;
                       }
+                      navigate(`/book/${listing.id}?room=${room.id}`);
                     }}
                     className={`p-4 rounded-2xl bg-navy-950/80 border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 group ${
                       room.available_beds > 0
@@ -544,14 +632,24 @@ export const ListingDetailsPage: React.FC = () => {
                         variant={room.available_beds > 0 ? 'glow' : 'outline'}
                         className="text-xs font-bold py-1.5 px-3.5"
                         disabled={room.available_beds <= 0}
+                        leftIcon={!hasStudentSubscription && room.available_beds > 0 ? <Lock className="w-3 h-3 text-amber-300" /> : undefined}
                         onClick={(e) => {
                           e.stopPropagation();
-                          if (room.available_beds > 0) {
-                            navigate(`/book/${listing.id}?room=${room.id}`);
+                          if (room.available_beds <= 0) return;
+                          if (!hasStudentSubscription) {
+                            openPaywall('book beds & pay advance reservation', () => {
+                              navigate(`/book/${listing.id}?room=${room.id}`);
+                            });
+                            return;
                           }
+                          navigate(`/book/${listing.id}?room=${room.id}`);
                         }}
                       >
-                        {room.available_beds > 0 ? 'Pay Advance & Book' : 'Full'}
+                        {room.available_beds <= 0
+                          ? 'Full'
+                          : hasStudentSubscription
+                          ? 'Pay Advance & Book'
+                          : 'Book Bed (₹ 9 Pass)'}
                       </Button>
                     </div>
                   </div>
@@ -639,13 +737,20 @@ export const ListingDetailsPage: React.FC = () => {
                   variant="glow"
                   className="w-full font-bold shadow-lg shadow-brand-500/25 py-3"
                   size="lg"
-                  leftIcon={<ShieldCheck className="w-5 h-5 text-white" />}
+                  leftIcon={hasStudentSubscription ? <ShieldCheck className="w-5 h-5 text-white" /> : <Lock className="w-5 h-5 text-white" />}
                   onClick={() => {
                     const firstAvailable = listing.rooms.find(r => r.available_beds > 0) || listing.rooms[0];
-                    navigate(firstAvailable ? `/book/${listing.id}?room=${firstAvailable.id}` : `/book/${listing.id}`);
+                    const target = firstAvailable ? `/book/${listing.id}?room=${firstAvailable.id}` : `/book/${listing.id}`;
+                    if (!hasStudentSubscription) {
+                      openPaywall('reserve beds & pay advance booking fee', () => {
+                        navigate(target);
+                      });
+                      return;
+                    }
+                    navigate(target);
                   }}
                 >
-                  Reserve Bed (Pay ₹ 999 Advance)
+                  {hasStudentSubscription ? 'Reserve Bed (Pay ₹ 999 Advance)' : 'Reserve Bed (Unlock with ₹ 9 Pass)'}
                 </Button>
 
                 <Button

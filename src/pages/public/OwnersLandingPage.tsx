@@ -125,17 +125,17 @@ export const OwnersLandingPage: React.FC = () => {
                   PG Owner Starter
                 </span>
                 <div className="flex items-baseline gap-1">
-                  <span className="text-3xl font-black text-white">₹ 499</span>
-                  <span className="text-xs text-slate-400">/month (proposed)</span>
+                  <span className="text-3xl font-black text-white">₹ 49</span>
+                  <span className="text-xs text-slate-400">/month (+ 18% GST)</span>
                 </div>
                 <p className="text-xs text-slate-400">
-                  Ideal for standalone PG owners managing 1 to 2 properties.
+                  Ideal for standalone PG owners managing 1 property.
                 </p>
 
                 <ul className="space-y-2.5 text-xs text-slate-300 pt-3 border-t border-navy-800">
                   <li className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <span>Up to 2 property listings</span>
+                    <span>1 property listing</span>
                   </li>
                   <li className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
@@ -153,7 +153,7 @@ export const OwnersLandingPage: React.FC = () => {
               </div>
 
               <Button variant="secondary" className="w-full" disabled>
-                Proposed Starter Tier (Coming Soon)
+                Starter Tier (₹ 49 + GST)
               </Button>
             </div>
 
@@ -169,8 +169,8 @@ export const OwnersLandingPage: React.FC = () => {
                   </span>
                 </div>
                 <div className="flex items-baseline gap-1">
-                  <span className="text-3xl font-black text-white">₹ 1,299</span>
-                  <span className="text-xs text-slate-400">/month (proposed)</span>
+                  <span className="text-3xl font-black text-white">₹ 99</span>
+                  <span className="text-xs text-slate-400">/month (+ 18% GST)</span>
                 </div>
                 <p className="text-xs text-slate-400">
                   Built for multi-branch PG businesses and coliving operators.

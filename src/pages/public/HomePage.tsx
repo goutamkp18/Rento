@@ -525,45 +525,47 @@ export const HomePage: React.FC = () => {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto items-stretch">
-            {/* Student Free Plan */}
+            {/* Student Pass Card */}
             <div className="bg-navy-900/90 border border-brand-500/30 rounded-3xl p-8 flex flex-col justify-between shadow-2xl relative">
               <div className="space-y-6">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider bg-emerald-500/10 px-2.5 py-1 rounded-md border border-emerald-500/20">
-                    Students &amp; Parents
+                  <span className="text-xs font-bold text-brand-300 uppercase tracking-wider bg-brand-500/10 px-2.5 py-1 rounded-md border border-brand-500/20">
+                    Students &amp; Residents
                   </span>
-                  <span className="text-xs text-slate-400">100% Free Forever</span>
+                  <span className="text-xs text-emerald-400 font-semibold bg-emerald-500/10 px-2.5 py-1 rounded-md border border-emerald-500/20">
+                    ₹ 9 All-Access
+                  </span>
                 </div>
                 <div>
-                  <h3 className="text-2xl font-black text-white">Student Free Access</h3>
+                  <h3 className="text-2xl font-black text-white">Student Access Pass</h3>
                   <p className="text-xs text-slate-400 mt-1.5">
-                    Full access to PG search, comparison, and direct owner visit scheduling.
+                    Browse basic PG info free. Unlock direct owner messaging, visits, bookings, live maps, and comparisons.
                   </p>
                 </div>
                 <div className="flex items-baseline gap-1.5">
-                  <span className="text-4xl font-extrabold text-white">₹0</span>
-                  <span className="text-xs text-slate-400">/ zero brokerage</span>
+                  <span className="text-4xl font-extrabold text-white">₹9</span>
+                  <span className="text-xs text-slate-400">/ pass (₹7.63 + 18% GST)</span>
                 </div>
                 <ul className="space-y-2.5 text-xs text-slate-300 pt-4 border-t border-navy-800">
                   <li className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <span>Browse all verified student PGs</span>
+                    <span>Free browsing of general PG info</span>
                   </li>
                   <li className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <span>Side-by-side accommodation comparison</span>
+                    <span>Unlock online bed reservation &amp; advance booking</span>
                   </li>
                   <li className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <span>Free in-person visit scheduling</span>
+                    <span>Unlock physical room visit scheduling</span>
                   </li>
                   <li className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <span>Save unlimited favourite stays</span>
+                    <span>Unlock direct queries &amp; manager chat</span>
                   </li>
                   <li className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <span>Direct contact with verified owners</span>
+                    <span>Unlock live Google Maps directions &amp; comparisons</span>
                   </li>
                 </ul>
               </div>
@@ -574,7 +576,7 @@ export const HomePage: React.FC = () => {
                   size="md"
                   onClick={handleFindPGClick}
                 >
-                  Find a PG
+                  Explore Stays &amp; Unlock ₹9 Pass
                 </Button>
               </div>
             </div>
@@ -586,19 +588,19 @@ export const HomePage: React.FC = () => {
                   <span className="text-xs font-bold text-violet-400 uppercase tracking-wider bg-violet-500/10 px-2.5 py-1 rounded-md border border-violet-500/20">
                     PG Owners &amp; Managers
                   </span>
-                  <span className="text-xs text-amber-400 font-semibold bg-amber-500/10 px-2.5 py-1 rounded-md border border-amber-500/20">
-                    Proposed Tier
+                  <span className="text-xs text-violet-300 font-semibold bg-violet-500/10 px-2.5 py-1 rounded-md border border-violet-500/20">
+                    Plans from ₹49
                   </span>
                 </div>
                 <div>
                   <h3 className="text-2xl font-black text-white">Owner Starter</h3>
                   <p className="text-xs text-slate-400 mt-1.5">
-                    Essential software suite for owners managing up to 2 student properties.
+                    Essential software suite for owners managing student properties. Starter ₹49, Pro ₹99, Pro Plus ₹199.
                   </p>
                 </div>
                 <div className="flex items-baseline gap-1.5">
-                  <span className="text-4xl font-extrabold text-white">₹499</span>
-                  <span className="text-xs text-slate-400">/ month (proposed)</span>
+                  <span className="text-4xl font-extrabold text-white">₹49</span>
+                  <span className="text-xs text-slate-400">/ month (+ 18% GST = ₹57.82)</span>
                 </div>
                 <ul className="space-y-2.5 text-xs text-slate-300 pt-4 border-t border-navy-800">
                   <li className="flex items-center gap-2">

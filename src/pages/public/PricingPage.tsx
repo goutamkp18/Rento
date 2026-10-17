@@ -14,8 +14,10 @@ import {
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
 import { useAuth } from '../../context/AuthContext';
+import { useStudentSubscription } from '../../context/StudentSubscriptionContext';
 import {
   OWNER_SUBSCRIPTION_PLANS,
+  STUDENT_SUBSCRIPTION_PLAN,
   calculatePlanPrice,
   formatINR,
   formatListingLimit,
@@ -26,13 +28,14 @@ import { SubscriptionPlanId } from '../../types';
 export const PricingPage: React.FC = () => {
   const navigate = useNavigate();
   const { user, isAuthenticated } = useAuth();
+  const { hasStudentSubscription, openPaywall } = useStudentSubscription();
   const [activeSegment, setActiveSegment] = useState<'all' | 'owners' | 'students'>('all');
 
   const handleStudentAction = () => {
-    if (isAuthenticated && user?.role === 'student') {
+    if (hasStudentSubscription) {
       navigate('/pgs');
     } else {
-      navigate('/login?role=student');
+      openPaywall('activate full student access pass');
     }
   };
 
@@ -57,39 +60,62 @@ export const PricingPage: React.FC = () => {
             Plans for Students & <span className="text-gradient-brand">PG Owners</span>
           </h1>
           <p className="text-sm sm:text-base text-slate-300 max-w-2xl mx-auto leading-relaxed">
-            Students browse, compare and book free of charge. PG owners subscribe to manage room inventories, enquiries and verified listings.
+            Free basic browsing for everyone. Students activate the ₹ 9 pass to unlock owner messaging, visits, booking, live directions & comparisons. Owners subscribe from ₹ 49/mo to list and manage accommodations.
           </p>
 
-          {/* Prototype GST Notice */}
+          {/* Transparent GST Notice */}
           <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-200 max-w-xl mx-auto flex items-start gap-3 text-left">
             <Info className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
             <div>
-              <p className="font-bold text-white">Transparent Tax Treatment (Illustrative GST 18%)</p>
+              <p className="font-bold text-white">Transparent 18% GST Compliance</p>
               <p className="text-slate-300 mt-0.5">
-                All prices and benefits are proposed and have not been market-validated. Displayed GST at 18% is illustrative for this frontend demo.
+                All subscriptions are billed with standard 18% GST clearly itemized. Starter at ₹ 49, Pro at ₹ 99, Pro Plus at ₹ 199, and Student Pass at ₹ 9.
               </p>
             </div>
           </div>
         </div>
 
-        {/* Student Highlight Banner */}
-        <div className="bg-gradient-to-r from-emerald-950/40 via-navy-900 to-navy-900 border border-emerald-500/20 rounded-3xl p-6 sm:p-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 shadow-xl">
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <GraduationCap className="w-5 h-5 text-emerald-400" />
-              <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">
-                For Students & Parents
+        {/* Student Pass Highlight Banner */}
+        <div className="bg-gradient-to-r from-brand-950/70 via-navy-900 to-navy-900 border border-brand-500/30 rounded-3xl p-6 sm:p-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 shadow-2xl">
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <GraduationCap className="w-5 h-5 text-brand-400" />
+              <span className="text-xs font-bold uppercase tracking-wider text-brand-400">
+                For Students &amp; Residents
               </span>
-              <Badge variant="success" size="sm">Always 100% Free</Badge>
+              <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 font-bold">
+                {hasStudentSubscription ? 'Active Pass' : '₹ 9 Only (Incl. GST)'}
+              </span>
             </div>
-            <h2 className="text-2xl font-black text-white">Zero Brokerage Student Access</h2>
-            <p className="text-xs sm:text-sm text-slate-300 max-w-2xl">
-              Browse verified PG accommodations near Bangalore universities, filter by real-world walking distance, compare up to 3 properties side-by-side, and request free in-person visits.
+            <h2 className="text-2xl sm:text-3xl font-black text-white">
+              Rento Student Access Pass — ₹ 9
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-300 max-w-2xl leading-relaxed">
+              Without subscription, students can view general PG overview and rent. Activate your ₹ 9 pass to unlock direct owner messaging, schedule physical room visits, reserve beds online, view exact Google Maps live navigation, and compare up to 3 PGs side-by-side.
             </p>
+            <div className="flex flex-wrap gap-4 text-xs text-slate-300 pt-1">
+              <span>✓ Direct Owner Chat</span>
+              <span>✓ Schedule Room Visits</span>
+              <span>✓ Online Bed Reservation</span>
+              <span>✓ Google Maps Live Directions</span>
+              <span>✓ Multi-PG Comparison</span>
+            </div>
           </div>
-          <Button variant="glow" size="lg" onClick={handleStudentAction} className="shrink-0">
-            Explore PGs Near Colleges →
-          </Button>
+
+          <div className="flex flex-col items-start md:items-end gap-2 shrink-0">
+            <div className="p-3 rounded-xl bg-navy-950 border border-navy-800 text-right hidden sm:block">
+              <div className="text-xl font-black text-emerald-400">₹ 9.00</div>
+              <div className="text-[10px] text-slate-400">Base ₹ 7.63 + ₹ 1.37 GST</div>
+            </div>
+            <Button
+              variant="glow"
+              size="lg"
+              onClick={handleStudentAction}
+              className="font-bold shadow-lg shadow-brand-500/25"
+            >
+              {hasStudentSubscription ? 'Browse Verified PGs →' : 'Unlock Student Pass for ₹ 9 →'}
+            </Button>
+          </div>
         </div>
 
         {/* 3 Owner SaaS Plans Header */}
@@ -209,21 +235,21 @@ export const PricingPage: React.FC = () => {
               <tbody className="divide-y divide-navy-800/60">
                 <tr>
                   <td className="py-3 px-4 font-semibold text-white">Monthly Base Price</td>
-                  <td className="py-3 px-4 font-bold">₹499</td>
-                  <td className="py-3 px-4 font-bold text-violet-300">₹999</td>
-                  <td className="py-3 px-4 font-bold">₹1,999</td>
+                  <td className="py-3 px-4 font-bold">₹49</td>
+                  <td className="py-3 px-4 font-bold text-violet-300">₹99</td>
+                  <td className="py-3 px-4 font-bold">₹199</td>
                 </tr>
                 <tr>
-                  <td className="py-3 px-4 font-semibold text-white">18% GST (Illustrative)</td>
-                  <td className="py-3 px-4">₹89.82</td>
-                  <td className="py-3 px-4 text-violet-300 font-semibold">₹179.82</td>
-                  <td className="py-3 px-4">₹359.82</td>
+                  <td className="py-3 px-4 font-semibold text-white">18% GST</td>
+                  <td className="py-3 px-4">₹8.82</td>
+                  <td className="py-3 px-4 text-violet-300 font-semibold">₹17.82</td>
+                  <td className="py-3 px-4">₹35.82</td>
                 </tr>
                 <tr>
                   <td className="py-3 px-4 font-semibold text-white">Total Monthly Total</td>
-                  <td className="py-3 px-4 font-extrabold text-white">₹588.82</td>
-                  <td className="py-3 px-4 font-extrabold text-violet-300">₹1,178.82</td>
-                  <td className="py-3 px-4 font-extrabold text-white">₹2,358.82</td>
+                  <td className="py-3 px-4 font-extrabold text-white">₹57.82</td>
+                  <td className="py-3 px-4 font-extrabold text-violet-300">₹116.82</td>
+                  <td className="py-3 px-4 font-extrabold text-white">₹234.82</td>
                 </tr>
                 <tr>
                   <td className="py-3 px-4 font-semibold text-white">PG Listing Limit</td>

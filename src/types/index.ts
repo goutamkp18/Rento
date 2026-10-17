@@ -228,6 +228,23 @@ export interface OwnerSubscription {
   updated_at: string;
 }
 
+export interface StudentSubscription {
+  id?: string;
+  student_id: string;
+  student_name?: string;
+  student_email?: string;
+  plan_id: 'student_pass';
+  status: 'active' | 'expired' | 'cancelled' | 'payment_failed';
+  base_price: number;
+  gst_amount: number;
+  total_price: number;
+  payment_method?: string;
+  payment_reference?: string;
+  start_date: string;
+  created_at: string;
+  updated_at?: string;
+}
+
 export type BookingStatus = 'confirmed' | 'pending' | 'cancelled';
 export type PaymentStatus = 'PAID' | 'PENDING' | 'FAILED';
 

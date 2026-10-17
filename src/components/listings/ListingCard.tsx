@@ -18,6 +18,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useFavourites } from '../../context/FavouritesContext';
 import { useCompare } from '../../context/CompareContext';
 import { useToast } from '../../context/ToastContext';
+import { useStudentSubscription } from '../../context/StudentSubscriptionContext';
 import { Badge } from '../ui/Badge';
 
 interface ListingCardProps {
@@ -28,6 +29,7 @@ interface ListingCardProps {
 export const ListingCard: React.FC<ListingCardProps> = ({ listing, layout = 'grid' }) => {
   const navigate = useNavigate();
   const { isAuthenticated, setIntendedDestination } = useAuth();
+  const { hasStudentSubscription, openPaywall } = useStudentSubscription();
   const { isFavourite, toggleFavourite } = useFavourites();
   const { isComparing, addToCompare, removeFromCompare } = useCompare();
   const { showToast } = useToast();
@@ -61,6 +63,12 @@ export const ListingCard: React.FC<ListingCardProps> = ({ listing, layout = 'gri
   const handleCompareToggle = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    if (!hasStudentSubscription) {
+      openPaywall('compare multiple PGs side-by-side', () => {
+        addToCompare(listing);
+      });
+      return;
+    }
     if (isComp) {
       removeFromCompare(listing.id);
     } else {

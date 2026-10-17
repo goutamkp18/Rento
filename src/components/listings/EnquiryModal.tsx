@@ -7,8 +7,9 @@ import { Input } from '../ui/Input';
 import { Select } from '../ui/Select';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
+import { useStudentSubscription } from '../../context/StudentSubscriptionContext';
 import { enquiriesService } from '../../services/enquiriesService';
-import { Calendar, Clock, MessageSquare, Send, ShieldCheck, ArrowRight } from 'lucide-react';
+import { Calendar, Clock, MessageSquare, Send, ShieldCheck, ArrowRight, Lock } from 'lucide-react';
 
 interface EnquiryModalProps {
   isOpen: boolean;
@@ -26,6 +27,7 @@ export const EnquiryModal: React.FC<EnquiryModalProps> = ({
   const navigate = useNavigate();
   const { user, isAuthenticated } = useAuth();
   const { showToast } = useToast();
+  const { hasStudentSubscription, openPaywall } = useStudentSubscription();
 
   const [enquiryType, setEnquiryType] = useState<EnquiryType>(initialType);
   const [studentName, setStudentName] = useState(user?.full_name || '');
@@ -60,6 +62,13 @@ export const EnquiryModal: React.FC<EnquiryModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!hasStudentSubscription) {
+      onClose();
+      openPaywall('send direct queries and visit requests to PG owners');
+      return;
+    }
+
     if (!validate()) return;
 
     setIsSubmitting(true);
@@ -171,11 +180,15 @@ export const EnquiryModal: React.FC<EnquiryModalProps> = ({
               type="button"
               onClick={() => {
                 onClose();
-                navigate(`/book/${listing.id}`);
+                if (!hasStudentSubscription) {
+                  openPaywall('unlock instant bed booking and reservation');
+                } else {
+                  navigate(`/book/${listing.id}`);
+                }
               }}
               className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-bold text-xs shadow-md transition-all shrink-0"
             >
-              <span>Pay Advance &amp; Book</span>
+              <span>{hasStudentSubscription ? 'Pay Advance & Book' : 'Unlock & Pay Advance'}</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -277,9 +290,9 @@ export const EnquiryModal: React.FC<EnquiryModalProps> = ({
             type="submit"
             variant="primary"
             isLoading={isSubmitting}
-            rightIcon={<Send className="w-4 h-4" />}
+            rightIcon={hasStudentSubscription ? <Send className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
           >
-            Submit Enquiry
+            {hasStudentSubscription ? 'Submit Enquiry' : 'Unlock ₹ 9 Pass to Submit'}
           </Button>
         </div>
       </form>

@@ -10,15 +10,19 @@ import {
   Utensils,
   ShieldCheck,
   ArrowRight,
-  ExternalLink
+  ExternalLink,
+  Lock,
+  Sparkles
 } from 'lucide-react';
 import { useCompare } from '../../context/CompareContext';
+import { useStudentSubscription } from '../../context/StudentSubscriptionContext';
 import { PGListing } from '../../types';
 import { listingsService } from '../../services/listingsService';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
 
 export const StudentComparePage: React.FC = () => {
+  const { hasStudentSubscription, openPaywall } = useStudentSubscription();
   const { compareListings, removeFromCompare, clearCompare, addToCompare } = useCompare();
   const [allListings, setAllListings] = useState<PGListing[]>([]);
   const [selectorOpen, setSelectorOpen] = useState(false);
@@ -65,61 +69,91 @@ export const StudentComparePage: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
-          {compareListings.length < 3 && (
-            <div className="relative">
-              <Button
-                variant="primary"
-                size="sm"
-                leftIcon={<Plus className="w-4 h-4" />}
-                onClick={() => setSelectorOpen(!selectorOpen)}
+        {hasStudentSubscription && (
+          <div className="flex items-center gap-3">
+            {compareListings.length < 3 && (
+              <div className="relative">
+                <Button
+                  variant="primary"
+                  size="sm"
+                  leftIcon={<Plus className="w-4 h-4" />}
+                  onClick={() => setSelectorOpen(!selectorOpen)}
+                >
+                  Add PG to Compare
+                </Button>
+
+                {selectorOpen && (
+                  <div className="absolute right-0 mt-2 w-72 bg-navy-900 border border-navy-750 rounded-2xl shadow-2xl p-2 z-50">
+                    <div className="px-3 py-2 text-xs font-bold text-slate-400 border-b border-navy-800 uppercase tracking-wider">
+                      Select a PG to add
+                    </div>
+                    <div className="max-h-60 overflow-y-auto space-y-1 mt-1">
+                      {availableToAdd.map(item => (
+                        <button
+                          key={item.id}
+                          onClick={() => {
+                            addToCompare(item);
+                            setSelectorOpen(false);
+                          }}
+                          className="w-full text-left p-2.5 rounded-xl hover:bg-navy-800 text-xs flex items-center justify-between transition-colors"
+                        >
+                          <div className="truncate pr-2">
+                            <p className="font-semibold text-white truncate">{item.name}</p>
+                            <p className="text-slate-400 text-[10px]">{item.locality}</p>
+                          </div>
+                          <span className="text-brand-300 font-bold shrink-0">
+                            ₹{item.min_monthly_rent}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {compareListings.length > 0 && (
+              <button
+                onClick={clearCompare}
+                className="text-xs text-slate-400 hover:text-red-400 transition-colors"
               >
-                Add PG to Compare
-              </Button>
-
-              {selectorOpen && (
-                <div className="absolute right-0 mt-2 w-72 bg-navy-900 border border-navy-750 rounded-2xl shadow-2xl p-2 z-50">
-                  <div className="px-3 py-2 text-xs font-bold text-slate-400 border-b border-navy-800 uppercase tracking-wider">
-                    Select a PG to add
-                  </div>
-                  <div className="max-h-60 overflow-y-auto space-y-1 mt-1">
-                    {availableToAdd.map(item => (
-                      <button
-                        key={item.id}
-                        onClick={() => {
-                          addToCompare(item);
-                          setSelectorOpen(false);
-                        }}
-                        className="w-full text-left p-2.5 rounded-xl hover:bg-navy-800 text-xs flex items-center justify-between transition-colors"
-                      >
-                        <div className="truncate pr-2">
-                          <p className="font-semibold text-white truncate">{item.name}</p>
-                          <p className="text-slate-400 text-[10px]">{item.locality}</p>
-                        </div>
-                        <span className="text-brand-300 font-bold shrink-0">
-                          ₹{item.min_monthly_rent}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {compareListings.length > 0 && (
-            <button
-              onClick={clearCompare}
-              className="text-xs text-slate-400 hover:text-red-400 transition-colors"
-            >
-              Clear All
-            </button>
-          )}
-        </div>
+                Clear All
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* Comparison Board or Empty State */}
-      {compareListings.length === 0 ? (
+      {/* Paywall Banner if not subscribed */}
+      {!hasStudentSubscription ? (
+        <div className="p-8 sm:p-12 rounded-3xl bg-gradient-to-r from-navy-950 via-navy-900 to-brand-950/40 border border-brand-500/30 text-center space-y-5 max-w-2xl mx-auto shadow-2xl my-6">
+          <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center mx-auto">
+            <Lock className="w-7 h-7" />
+          </div>
+          <div className="space-y-2">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-brand-500/10 text-brand-300 text-xs font-bold border border-brand-500/20">
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Student Pass Feature (₹ 9 with GST)</span>
+            </div>
+            <h2 className="text-2xl sm:text-3xl font-black text-white">
+              Unlock Side-by-Side PG Comparisons
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-300 leading-relaxed max-w-lg mx-auto">
+              Without an active student subscription, only basic PG info is visible. Activate your ₹ 9 Student Access Pass to unlock multi-PG comparisons, direct messaging with owners, bed booking, and live Google Maps directions.
+            </p>
+          </div>
+
+          <Button
+            variant="glow"
+            size="lg"
+            className="font-bold py-3.5 px-6 shadow-xl shadow-brand-500/25"
+            leftIcon={<Lock className="w-4 h-4" />}
+            onClick={() => openPaywall('unlock side-by-side PG comparisons')}
+          >
+            Unlock Comparison Tool for ₹ 9
+          </Button>
+        </div>
+      ) : compareListings.length === 0 ? (
         <div className="bg-navy-900/50 border border-dashed border-navy-800 rounded-3xl p-12 text-center max-w-lg mx-auto space-y-4">
           <div className="w-16 h-16 rounded-2xl bg-brand-500/10 border border-brand-500/20 text-brand-400 flex items-center justify-center mx-auto">
             <Scale className="w-8 h-8" />

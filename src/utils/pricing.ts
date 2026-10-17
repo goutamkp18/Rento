@@ -8,20 +8,20 @@ export const DEFAULT_GST_RATE = 0.18;
 
 /**
  * Centralized configuration for Rento PG Owner Subscription Plans.
- * Base prices exclude GST.
+ * Low, accessible pricing with 18% GST calculation.
  */
 export const OWNER_SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
   {
     id: 'basic',
-    name: 'Basic',
+    name: 'Starter',
     tagline: 'Ideal for standalone PG owners starting out',
-    basePrice: 499,
+    basePrice: 49,
     billingInterval: 'month',
     listingLimit: 1,
     description: 'Ideal for standalone PG owners starting out',
     features: [
       'Manage 1 PG property',
-      'Basic property listing management',
+      'Full property listing management',
       'Room & bed availability tracking',
       'Student enquiries & visit requests',
       'Standard search placement',
@@ -34,12 +34,12 @@ export const OWNER_SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
     name: 'Pro',
     tagline: 'Recommended for growing PG owners with multiple properties',
     description: 'Recommended for growing PG owners with multiple properties',
-    basePrice: 999,
+    basePrice: 99,
     billingInterval: 'month',
     listingLimit: 3,
     features: [
       'Manage up to 3 PG properties',
-      'All Basic features included',
+      'All Starter features included',
       'Combined enquiry management inbox',
       'Portfolio occupancy overview',
       'Basic property analytics & views',
@@ -53,21 +53,42 @@ export const OWNER_SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
     name: 'Pro Plus',
     tagline: 'Comprehensive solution for commercial coliving chains',
     description: 'Comprehensive solution for commercial coliving chains',
-    basePrice: 1999,
+    basePrice: 199,
     billingInterval: 'month',
-    listingLimit: Infinity, // Unlimited as proposed plan benefit
+    listingLimit: Infinity, // Unlimited properties
     features: [
-      'Unlimited PG properties (Proposed)',
+      'Unlimited PG properties',
       'All Pro features included',
       'Centralized multi-property operations',
       'Advanced portfolio analytics & revenue',
-      'Priority support as a proposed benefit',
+      'Priority support as an enterprise benefit',
       'Custom room tier management',
     ],
     isRecommended: false,
     badge: 'Enterprise',
   },
 ];
+
+/**
+ * Rento Student Access Pass (₹9 with GST included).
+ * Unlocks enquiries, bed booking, PG comparisons, and live Google Maps locations.
+ */
+export const STUDENT_SUBSCRIPTION_PLAN = {
+  id: 'student_pass' as const,
+  name: 'Student Access Pass',
+  tagline: 'Unlock all PG features: booking, messaging, live locations & comparisons',
+  basePrice: 7.63,
+  gstAmount: 1.37,
+  totalPrice: 9.00,
+  billingInterval: 'month' as const,
+  features: [
+    'Unlock exact property addresses & live Google Maps directions',
+    'Direct messaging & chat with PG property managers',
+    'Schedule free in-person room visits',
+    'Reserve verified beds & pay advance booking fee',
+    'Full side-by-side multi-PG comparison tool',
+  ],
+};
 
 /**
  * Calculates base price, GST amount and final monthly total.

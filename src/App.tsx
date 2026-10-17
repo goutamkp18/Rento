@@ -4,6 +4,7 @@ import { ThemeProvider } from './context/ThemeContext';
 import { ToastProvider } from './context/ToastContext';
 import { AuthProvider } from './context/AuthContext';
 import { SubscriptionProvider } from './context/SubscriptionContext';
+import { StudentSubscriptionProvider } from './context/StudentSubscriptionContext';
 import { FavouritesProvider } from './context/FavouritesContext';
 import { CompareProvider } from './context/CompareContext';
 import { ErrorBoundary } from './components/ui/ErrorBoundary';
@@ -73,9 +74,10 @@ export function App() {
         <BrowserRouter>
           <AuthProvider>
             <SubscriptionProvider>
-              <FavouritesProvider>
-                <CompareProvider>
-                  <Routes>
+              <StudentSubscriptionProvider>
+                <FavouritesProvider>
+                  <CompareProvider>
+                    <Routes>
                     {/* Owner Onboarding & Checkout Routes */}
                     <Route path="/owner/plans" element={<PlanSelectionPage />} />
                     <Route path="/owner/checkout" element={<CheckoutPage />} />
@@ -161,7 +163,8 @@ export function App() {
                   </Routes>
                 </CompareProvider>
               </FavouritesProvider>
-            </SubscriptionProvider>
+            </StudentSubscriptionProvider>
+          </SubscriptionProvider>
           </AuthProvider>
         </BrowserRouter>
       </ToastProvider>
