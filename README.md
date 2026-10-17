@@ -1,114 +1,177 @@
-# Rento — Student Accommodation Discovery & PG Management SaaS
+# 🏠 Rento — Find Your Stay. Manage Your Space.
 
-> **"Find your stay. Manage your space."**
+> 🎓 Finding a PG shouldn't feel harder than finding a job!
 
-Rento is a student accommodation discovery marketplace and PG management SaaS platform built with React, Vite, TypeScript, and Tailwind CSS. It connects university scholars with verified hostel & PG accommodations and equips PG owners with real-time bed inventory tracking, enquiry management, and operational dashboards.
+**Rento** is a student accommodation discovery marketplace and PG management SaaS designed to connect students with paying guest accommodations near colleges across Bengaluru. It also helps PG owners manage property listings, room availability, bed inventory, and student enquiries.
+
+🔗 **Live Demo:** [rentoai.vercel.app](https://rentoai.vercel.app/)
 
 ---
 
-## 🚀 Live Demo & Getting Started
+## ✨ Features
 
-### 1. Prerequisites
-- **Node.js** (v18 or newer recommended, tested on Node v24.21.0)
-- **npm** (v10 or newer)
+### 🎓 For Students
+- 🔍 Discover PGs by college, location, budget, and amenities.
+- 🏡 Explore property details, photos, room types, and pricing.
+- ⚖️ Compare accommodations side by side.
+- ❤️ Save favourite properties.
+- 📩 Send enquiries and manage visit requests.
 
-### 2. Installation
+### 🏢 For PG Owners
+- 📝 Create and manage PG listings.
+- 🛏️ Track room capacity and available beds.
+- 📸 Manage property photographs and amenities.
+- 📬 View and respond to student enquiries.
+- 📊 Monitor listings through an owner dashboard.
+
+### 🛡️ For Administrators
+- Review submitted property listings.
+- Approve or reject listings with reasons.
+- Manage publication and verification status.
+
+---
+
+## 🛠️ Tech Stack
+
+| Technology | Purpose |
+|---|---|
+| React 18 | Frontend UI |
+| Vite | Development server and build tool |
+| TypeScript | Type-safe development |
+| Tailwind CSS | Responsive styling |
+| React Router | Client-side navigation |
+| Framer Motion | UI animations and transitions |
+| Lucide React | Icons |
+| Supabase | Authentication, database, and storage |
+
+---
+
+## 🚀 Getting Started
+
+### Prerequisites
+
+- Node.js 18 or newer
+- npm 10 or newer
+- Git
+
+### 1. Clone the Repository
+
 ```bash
-# Clone the repository and navigate into the project directory
+git clone <your-repository-url>
+cd <your-project-folder>
+```
+
+### 2. Install Dependencies
+
+```bash
 npm install
 ```
 
-### 3. Running Locally in Development Mode
+### 3. Configure Environment Variables
+
+Create a `.env` file in the project root:
+
+```env
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=your-publishable-key
+```
+
+Configure your Supabase database, authentication, storage, and security policies before using live backend features.
+
+**Never expose your Supabase service-role key in frontend code.**
+
+### 4. Run the Development Server
+
 ```bash
 npm run dev
 ```
-The application will launch at: **`http://localhost:5173/`**
 
-### 4. Production Build Validation
+Open the local URL shown in your terminal, usually:
+
+`http://localhost:5173/`
+
+### 5. Build for Production
+
 ```bash
 npm run build
 ```
-Compiles TypeScript using `tsc -b` and bundles assets with Vite.
 
 ---
 
-## 🛠 Technology Stack
+## 🔄 How Rento Works
 
-- **Framework**: React 18
-- **Build Tool**: Vite 8
-- **Language**: TypeScript (strict typing with comprehensive data models)
-- **Styling**: Tailwind CSS (custom dark midnight palette with brand indigo and electric violet accents)
-- **Routing**: React Router 7 (`react-router-dom`)
-- **Icons**: Lucide React
-- **Animations & Transitions**: Framer Motion & CSS hardware-accelerated transitions
-- **Backend Ready Client**: `@supabase/supabase-js`
+```mermaid
+flowchart TD
+    A["🏠 Open Rento"] --> B["🔍 Discover PGs"]
+    B --> C["📍 Filter by College, Location & Budget"]
+    C --> D["🏡 Compare Properties"]
+    D --> E["📩 Contact PG Owner"]
+    E --> F["🤝 Arrange a Visit"]
 
----
-
-## 🗺 Implemented Route Structure
-
-### 1. Public Discovery Website
-| Route | Component | Description |
-|---|---|---|
-| `/` | `HomePage` | Hero section, college quick search, value propositions, popular PGs, 3-step workflow, dual student/owner CTAs, stats & testimonials, FAQ |
-| `/pgs` | `ExplorePage` | Complete discovery catalog with real-time budget slider, room type checkboxes, food availability, amenities filter, sorting, and mobile drawer |
-| `/pgs/:id` | `ListingDetailsPage` | Property photo gallery, college proximity, room matrix with bed counts, transparent cost breakdown, house rules, and visit booking modals |
-| `/how-it-works` | `HowItWorksPage` | Interactive step-by-step presentation for both students and PG owners |
-| `/owners` | `OwnersLandingPage` | B2B marketing landing page detailing bed tracking, enquiry triage, and proposed pricing |
-| `/pricing` | `PricingPage` | Free Student tier, proposed ₹499/mo Starter tier, and enterprise tier with transparent prototype disclosures |
-
-### 2. Authentication UI
-| Route | Component | Description |
-|---|---|---|
-| `/login` | `LoginPage` | Email/password login with role toggle, 1-click demo persona switcher, password visibility toggle, and preserved redirect destination |
-| `/signup` | `SignupPage` | Registration with Student vs PG Owner role selection (admin registration strictly forbidden on public signup) |
-| `/forgot-password` | `ForgotPasswordPage` | Email reset link dispatch UI and recovery flow |
-
-### 3. Student Portal (`/student/*`)
-| Route | Component | Description |
-|---|---|---|
-| `/student/dashboard` | `StudentDashboardPage` | Personalized welcome, quick search shortcut, saved PGs counter, enquiry tracker, and college-proximity recommendations |
-| `/student/compare` | `StudentComparePage` | Side-by-side comparison matrix of up to 3 accommodations across rent, deposit, upfront cost, food, rules, and amenities |
-| `/student/favourites` | `StudentFavouritesPage` | Bookmarked properties with 1-click remove, persistent local storage sync, and empty state |
-| `/student/enquiries` | `StudentEnquiriesPage` | Status-tracked enquiry threads, scheduled visit appointments, and property manager response threads |
-| `/student/profile` | `StudentProfilePage` | Personal details, registered phone for visit SMS, and college affiliation |
-
-### 4. PG Owner SaaS Portal (`/owner/*`)
-| Route | Component | Description |
-|---|---|---|
-| `/owner/dashboard` | `OwnerDashboardPage` | Total properties, published count, live bed capacity, occupancy percentage bar, and student enquiry triage |
-| `/owner/listings` | `OwnerListingsPage` | Property management table with status filtering, pause/resume listing controls, and submit for review |
-| `/owner/listings/new` | `CreateEditListingPage` | 6-section property onboarding form (Basic info, university proximity, pricing, amenities, house rules, photos) |
-| `/owner/listings/:id/edit` | `CreateEditListingPage` | Edit existing listing metadata and terms |
-| `/owner/listings/:id/rooms` | `OwnerRoomsPage` | Live bed vacancy visualizer matrix with slot-level occupied vs vacant indicators and capacity validation |
-| `/owner/enquiries` | `OwnerEnquiriesPage` | Two-pane inbox to respond to student queries, confirm visit dates, or decline slots with reasons |
-| `/owner/subscription` | `OwnerSubscriptionPage` | Early Access complimentary status and proposed future commercial pricing |
-| `/owner/settings` | `OwnerSettingsPage` | Business name, primary manager contact, and registered city |
-
-### 5. Minimal Admin Interface
-| Route | Component | Description |
-|---|---|---|
-| `/admin/listings` | `AdminListingsPage` | Operations review queue, separate publication status and physical on-site verification status, approve/reject controls with mandatory rejection reasons |
-
----
-
-## 🔌 Teammate Backend (Supabase) Integration Guide
-
-This frontend has been designed from the ground up for seamless backend integration:
-
-### 1. Environment Variables
-Add your Supabase project credentials to `.env`:
-```env
-VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_PUBLISHABLE_KEY=your-supabase-anon-key
+    G["🏢 PG Owner"] --> H["📝 Create Listing"]
+    H --> I["🛏️ Add Rooms, Beds & Pricing"]
+    I --> J["🛡️ Admin Review"]
+    J --> K["✅ Approved Listing"]
+    K --> B
 ```
 
-### 2. Service Layer Architecture
-All frontend components communicate solely through `src/services/`:
-- [listingsService.ts](file:///d:/rento/src/services/listingsService.ts): Connects to `pg_listings`, `rooms`, and `listing_images`
-- [roomsService.ts](file:///d:/rento/src/services/roomsService.ts): Queries and updates bed capacities in `rooms`
-- [enquiriesService.ts](file:///d:/rento/src/services/enquiriesService.ts): Syncs student inquiries and owner responses with `enquiries`
-- [favouritesService.ts](file:///d:/rento/src/services/favouritesService.ts): Syncs student bookmarks with `favourites`
-- [authService.ts](file:///d:/rento/src/services/authService.ts): Authenticates with Supabase Auth (`supabase.auth.signInWithPassword` & `signUp`)
+**Student workflow:** Search → Compare → Save → Enquire → Visit.
 
-When `VITE_SUPABASE_URL` is empty, the frontend runs smoothly in local fixture mode using persistent browser storage so you can demo the full UI immediately. Once credentials are provided, `src/lib/supabase.ts` activates live queries automatically.
+**Owner workflow:** Register → List Property → Manage Beds → Receive Enquiries.
+
+**Admin workflow:** Review → Approve or Reject → Manage Listings.
+
+---
+
+## 😂 Rento Memes
+
+### Meme 1: The Student PG Search
+
+**Expectation:**
+> "I'll find a good PG in 10 minutes."
+
+**Reality:**
+> 47 tabs open. 23 phone calls. 0 matching photos. 💀
+
+**Rento:**
+> One platform. Compare your options. Find your stay. 🏠
+
+---
+
+### Meme 2: The PG Owner
+
+**Before Rento:**
+> "Bhai, bed vacant hai kya? Rent kitna hai? Food included hai?" 😭
+
+**After finding the right listing:**
+> "All the details are in one place." 😎
+
+---
+
+### Meme 3: The College Distance
+
+**PG listing:** "Just 5 minutes from college!"
+
+**Google Maps:** "5 minutes by aircraft." ✈️💀
+
+**Rento:** Check the location before you book. 📍
+
+---
+
+## 🎯 Project Goal
+
+Rento aims to make student accommodation discovery more convenient while helping PG owners manage their properties efficiently. The platform brings property search, room information, pricing, bed availability, and enquiries into one experience.
+
+The long-term goal is to build a sustainable accommodation marketplace with useful tools for both students and property owners.
+
+---
+
+## 📌 Project Status
+
+Rento supports a frontend demo and is designed for Supabase integration. Available functionality depends on the configured backend and deployment environment. Proposed subscription plans are not proof of active payment processing.
+
+---
+
+**Made with ❤️ for students looking for a place to call home.**
+
+### Rento — Find Your Stay. Manage Your Space.
