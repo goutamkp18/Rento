@@ -17,32 +17,49 @@ const StudentSubscriptionContext = createContext<StudentSubscriptionContextType 
 
 export const StudentSubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
-  const [hasStudentSubscription, setHasStudentSubscription] = useState<boolean>(false);
-  const [studentSubscription, setStudentSubscription] = useState<StudentSubscription | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  
+  // Synchronous initial check so there is zero delay or flash of locked state
+  const [hasStudentSubscription, setHasStudentSubscription] = useState<boolean>(() => {
+    return studentSubscriptionService.isLocallyUnlocked(user?.id, user?.email);
+  });
+  
+  const [studentSubscription, setStudentSubscription] = useState<StudentSubscription | null>(() => {
+    return studentSubscriptionService.getLocalSubscription(user?.id, user?.email);
+  });
+
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isPaywallOpen, setIsPaywallOpen] = useState<boolean>(false);
   const [paywallReason, setPaywallReason] = useState<string>('access full PG features');
   const [pendingSuccessCallback, setPendingSuccessCallback] = useState<(() => void) | null>(null);
 
   const checkSubscription = useCallback(async () => {
-    setIsLoading(true);
+    const studentId = user?.id || '';
+    const studentEmail = user?.email || '';
+
+    // If already locally unlocked, immediately guarantee active status
+    if (studentSubscriptionService.isLocallyUnlocked(studentId, studentEmail)) {
+      setHasStudentSubscription(true);
+      const local = studentSubscriptionService.getLocalSubscription(studentId, studentEmail);
+      if (local) setStudentSubscription(local);
+    }
+
     try {
-      const studentId = user?.id;
-      const sub = await studentSubscriptionService.getStudentSubscription(studentId || '');
+      const sub = await studentSubscriptionService.getStudentSubscription(studentId, studentEmail);
       if (sub && sub.status === 'active') {
         setHasStudentSubscription(true);
         setStudentSubscription(sub);
       } else {
-        setHasStudentSubscription(false);
-        setStudentSubscription(null);
+        // Only set to false if NOT locally unlocked
+        if (!studentSubscriptionService.isLocallyUnlocked(studentId, studentEmail)) {
+          setHasStudentSubscription(false);
+          setStudentSubscription(null);
+        }
       }
     } catch (err) {
       console.warn('Student subscription check error:', err);
-      // Check local cache
-      const local = studentSubscriptionService.getLocalSubscription(user?.id);
-      if (local && local.status === 'active') {
+      if (studentSubscriptionService.isLocallyUnlocked(studentId, studentEmail)) {
         setHasStudentSubscription(true);
-        setStudentSubscription(local);
+        setStudentSubscription(studentSubscriptionService.getLocalSubscription(studentId, studentEmail));
       }
     } finally {
       setIsLoading(false);
@@ -54,6 +71,14 @@ export const StudentSubscriptionProvider: React.FC<{ children: React.ReactNode }
   }, [checkSubscription]);
 
   const openPaywall = (reason?: string, onSuccess?: () => void) => {
+    // CRITICAL: If the customer already paid and pass is active, NEVER show paywall again!
+    if (hasStudentSubscription || studentSubscriptionService.isLocallyUnlocked(user?.id, user?.email)) {
+      if (onSuccess) {
+        onSuccess();
+      }
+      return;
+    }
+
     if (reason) setPaywallReason(reason);
     if (onSuccess) setPendingSuccessCallback(() => onSuccess);
     setIsPaywallOpen(true);
@@ -65,6 +90,7 @@ export const StudentSubscriptionProvider: React.FC<{ children: React.ReactNode }
   };
 
   const handlePaywallSuccess = async () => {
+    setHasStudentSubscription(true);
     await checkSubscription();
     if (pendingSuccessCallback) {
       pendingSuccessCallback();

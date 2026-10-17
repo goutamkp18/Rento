@@ -18,12 +18,14 @@ import { useAuth } from '../../context/AuthContext';
 import { useStudentSubscription } from '../../context/StudentSubscriptionContext';
 import { useFavourites } from '../../context/FavouritesContext';
 import { useCompare } from '../../context/CompareContext';
+import { useToast } from '../../context/ToastContext';
 import { PGListing, Enquiry, Booking } from '../../types';
 import { listingsService } from '../../services/listingsService';
 import { favouritesService } from '../../services/favouritesService';
 import { enquiriesService } from '../../services/enquiriesService';
 import { bookingService } from '../../services/bookingService';
-import { downloadBookingPdf, formatINR } from '../../utils/receiptGenerator';
+import { studentSubscriptionService } from '../../services/studentSubscriptionService';
+import { downloadBookingPdf, downloadStudentPassPdf, formatINR } from '../../utils/receiptGenerator';
 import { ListingCard } from '../../components/listings/ListingCard';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
@@ -31,7 +33,8 @@ import { Download, FileText, CheckCircle2 as CheckCircleIcon, Loader2, Lock, Unl
 
 export const StudentDashboardPage: React.FC = () => {
   const { user } = useAuth();
-  const { hasStudentSubscription, openPaywall } = useStudentSubscription();
+  const { showToast } = useToast();
+  const { hasStudentSubscription, studentSubscription, openPaywall } = useStudentSubscription();
   const { favouriteCount } = useFavourites();
   const { compareCount } = useCompare();
   const navigate = useNavigate();
@@ -40,6 +43,7 @@ export const StudentDashboardPage: React.FC = () => {
   const [enquiries, setEnquiries] = useState<Enquiry[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [isDownloadingPass, setIsDownloadingPass] = useState(false);
   const [recommendations, setRecommendations] = useState<PGListing[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -77,6 +81,45 @@ export const StudentDashboardPage: React.FC = () => {
       await downloadBookingPdf(booking);
     } finally {
       setDownloadingId(null);
+    }
+  };
+
+  const handleDownloadPassReceipt = async () => {
+    setIsDownloadingPass(true);
+    try {
+      const activeSub =
+        studentSubscription ||
+        studentSubscriptionService.getLocalSubscription(user?.id, user?.email) || {
+          id: `sub_stu_${Date.now()}`,
+          student_id: user?.id || 'stu_user',
+          student_name: user?.full_name || 'Student Resident',
+          student_email: user?.email || '',
+          plan_id: 'student_pass' as const,
+          status: 'active' as const,
+          base_price: 7.63,
+          gst_amount: 1.37,
+          total_price: 9.0,
+          payment_method: 'upi' as const,
+          payment_reference: `TXN-STU-${Date.now().toString().slice(-7)}`,
+          start_date: new Date().toISOString(),
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+
+      await downloadStudentPassPdf(activeSub);
+      showToast({
+        type: 'success',
+        title: 'Pass Saved to Folder',
+        message: 'Official ₹9 Student Access Pass PDF receipt has been saved to your Downloads folder.',
+      });
+    } catch (err: any) {
+      showToast({
+        type: 'error',
+        title: 'Download Failed',
+        message: err?.message || 'Could not export pass PDF.',
+      });
+    } finally {
+      setIsDownloadingPass(false);
     }
   };
 
@@ -162,7 +205,18 @@ export const StudentDashboardPage: React.FC = () => {
           </div>
         </div>
 
-        {!hasStudentSubscription && (
+        {hasStudentSubscription ? (
+          <Button
+            size="sm"
+            variant="outline"
+            className="shrink-0 text-xs font-semibold border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10 shadow-sm"
+            onClick={handleDownloadPassReceipt}
+            isLoading={isDownloadingPass}
+            leftIcon={<Download className="w-3.5 h-3.5 text-emerald-400" />}
+          >
+            Save Pass to Folder (PDF)
+          </Button>
+        ) : (
           <Button
             size="sm"
             variant="primary"

@@ -1,6 +1,6 @@
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
-import { Booking } from '../types';
+import { Booking, StudentSubscription } from '../types';
 
 /**
  * Formats a currency amount into Indian Rupee format (₹ X,XXX).
@@ -395,5 +395,155 @@ export const openReceiptWindow = (booking: Booking): void => {
     printWindow.document.open();
     printWindow.document.write(html);
     printWindow.document.close();
+  }
+};
+
+/**
+ * Generates and downloads an authoritative PDF receipt for the ₹9 Student Access Pass.
+ * Saves the file directly to the user's local folder.
+ */
+export const downloadStudentPassPdf = async (sub: StudentSubscription): Promise<void> => {
+  const container = document.createElement('div');
+  container.style.position = 'fixed';
+  container.style.left = '-9999px';
+  container.style.top = '0';
+  container.style.width = '794px';
+  container.style.background = '#ffffff';
+  container.style.zIndex = '-1000';
+
+  const html = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <style>
+    * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { margin: 0; padding: 36px; background: #ffffff; color: #1e1b4b; }
+    .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #e0e7ff; padding-bottom: 20px; }
+    .brand { font-size: 26px; font-weight: 900; color: #4338ca; letter-spacing: -0.5px; }
+    .badge { display: inline-block; padding: 4px 12px; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; border-radius: 9999px; font-size: 11px; font-weight: 800; text-transform: uppercase; }
+    .title-row { margin-top: 24px; }
+    .title { font-size: 20px; font-weight: 800; color: #0f172a; margin: 0; }
+    .subtitle { font-size: 12px; color: #64748b; margin-top: 4px; }
+    .card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 16px; padding: 20px; margin-top: 20px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .field-label { font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase; }
+    .field-value { font-size: 13px; font-weight: 700; color: #0f172a; margin-top: 2px; }
+    .table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    .table th { background: #f1f5f9; padding: 10px 14px; text-align: left; font-size: 11px; font-weight: 700; color: #475569; text-transform: uppercase; border-radius: 8px 8px 0 0; }
+    .table td { padding: 12px 14px; border-bottom: 1px solid #e2e8f0; font-size: 12px; }
+    .total-row td { font-size: 14px; font-weight: 900; color: #4338ca; border-top: 2px solid #c7d2fe; border-bottom: none; }
+    .features { margin-top: 24px; padding: 18px; background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 14px; }
+    .features-title { font-size: 12px; font-weight: 800; color: #3730a3; text-transform: uppercase; margin-bottom: 8px; }
+    .features-list { margin: 0; padding-left: 18px; font-size: 11px; color: #312e81; line-height: 1.6; }
+    .footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #e2e8f0; text-align: center; font-size: 10px; color: #94a3b8; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <div class="brand">RENTO</div>
+      <div style="font-size: 11px; color: #64748b; font-weight: 600;">Verified Student Accommodation Platform</div>
+    </div>
+    <div style="text-align: right;">
+      <span class="badge">PAID • ACTIVE • LIFETIME ACCESS</span>
+      <div style="font-size: 10px; color: #64748b; margin-top: 4px;">Receipt Ref: ${escapeHtml(sub.payment_reference || sub.id || 'TXN-STU-PASS')}</div>
+    </div>
+  </div>
+
+  <div class="title-row">
+    <h1 class="title">Official Student Access Pass Receipt</h1>
+    <p class="subtitle">Tax invoice &amp; proof of all-access entitlement for verified student resident</p>
+  </div>
+
+  <div class="card">
+    <div class="grid">
+      <div>
+        <div class="field-label">Student Name</div>
+        <div class="field-value">${escapeHtml(sub.student_name || 'Student Resident')}</div>
+      </div>
+      <div>
+        <div class="field-label">Registered Email</div>
+        <div class="field-value">${escapeHtml(sub.student_email || 'Attached to active session')}</div>
+      </div>
+      <div>
+        <div class="field-label">Plan Name</div>
+        <div class="field-value">₹ 9 Student All-Access Pass</div>
+      </div>
+      <div>
+        <div class="field-label">Payment Mode &amp; Date</div>
+        <div class="field-value">${escapeHtml(sub.payment_method?.toUpperCase() || 'UPI')} • ${new Date(sub.created_at || Date.now()).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
+      </div>
+    </div>
+  </div>
+
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Fee Breakdown Item</th>
+        <th style="text-align: right;">Amount (INR)</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Student All-Access Pass</strong><br><span style="font-size: 10px; color: #64748b;">Direct owner messaging, bed bookings, live location &amp; comparisons</span></td>
+        <td style="text-align: right; font-weight: 600;">₹ 7.63</td>
+      </tr>
+      <tr>
+        <td><strong>Goods &amp; Services Tax (18% GST)</strong><br><span style="font-size: 10px; color: #64748b;">Statutory CGST 9% + SGST 9% / IGST 18%</span></td>
+        <td style="text-align: right; font-weight: 600;">₹ 1.37</td>
+      </tr>
+      <tr class="total-row">
+        <td>Total Paid Amount</td>
+        <td style="text-align: right;">₹ 9.00</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="features">
+    <div class="features-title">Unlocked Entitlements Confirmed:</div>
+    <ul class="features-list">
+      <li><strong>Online Bed Reservations:</strong> Book student beds directly with verified deposit tracking</li>
+      <li><strong>Direct Owner Queries:</strong> Send questions &amp; chat directly with verified property managers</li>
+      <li><strong>Physical Room Visits:</strong> Schedule in-person property walkthrough appointments</li>
+      <li><strong>Live GPS &amp; Maps Navigation:</strong> Full street address, landmark &amp; Google Maps navigation unlocked</li>
+      <li><strong>Multi-PG Comparisons:</strong> Compare up to 3 student accommodations side-by-side</li>
+    </ul>
+  </div>
+
+  <div class="footer">
+    This is an authoritative computer-generated payment voucher issued by Rento Student Living Services.<br>
+    Support: support@rento.dev • Website: rento.dev
+  </div>
+</body>
+</html>`;
+
+  container.innerHTML = html;
+  document.body.appendChild(container);
+
+  try {
+    const canvas = await html2canvas(container, {
+      scale: 2,
+      useCORS: true,
+      logging: false,
+      backgroundColor: '#ffffff',
+    });
+
+    const imgData = canvas.toDataURL('image/png');
+    const pdf = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4',
+    });
+
+    const pdfWidth = 210;
+    const imgHeight = (canvas.height * pdfWidth) / canvas.width;
+    pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, imgHeight, undefined, 'FAST');
+
+    const filename = `Rento_Student_Pass_Receipt_${sanitizeFilename(sub.payment_reference || sub.id || 'pass')}.pdf`;
+    pdf.save(filename);
+  } finally {
+    if (container.parentNode) {
+      container.parentNode.removeChild(container);
+    }
   }
 };
