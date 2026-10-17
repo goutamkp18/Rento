@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none">
+  <defs>
+    <linearGradient id="ren-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#8B5CF6"/>
+      <stop offset="50%" stop-color="#6366F1"/>
+      <stop offset="100%" stop-color="#4F46E5"/>
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#6366F1" flood-opacity="0.4"/>
+    </filter>
+  </defs>
+  <rect width="100" height="100" rx="24" fill="#0B0F19"/>
+  <path d="M30 25 H52 C65 25 72 32 72 42 C72 50 66 56 56 58 L72 75 H58 L45 60 H40 V75 H30 V25 Z M40 35 V50 H52 C58 50 62 47 62 42 C62 37 58 35 52 35 H40 Z" fill="url(#ren-grad)" filter="url(#glow)"/>
+</svg>

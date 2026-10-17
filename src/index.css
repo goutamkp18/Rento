@@ -1,0 +1,442 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* =============================================================================
+   RENTO DESIGN TOKENS - LIGHT & DARK THEMES
+   ============================================================================= */
+
+:root {
+  /* LIGHT THEME (Default)
+     - Background: #F7F7F5
+     - Cards:      #FFFFFF
+     - Text:       #171717
+     - Secondary:  #666661
+     - Borders:    rgba(0, 0, 0, 0.08)
+     - Accent:     #C58B65
+  */
+  --color-bg-app: 247 247 245;
+  --color-bg-card: 255 255 255;
+  --color-bg-elevated: 240 240 237;
+  --color-bg-subtle: 235 235 231;
+  --color-bg-muted: 226 226 220;
+
+  --color-text-primary: 23 23 23;
+  --color-text-secondary: 102 102 97;
+  --color-text-muted: 142 142 137;
+
+  --color-border-rgb: 0 0 0;
+  --color-border-subtle: rgba(0, 0, 0, 0.08);
+  --color-border-medium: rgba(0, 0, 0, 0.14);
+
+  --color-accent: 197 139 101;
+  --color-accent-hover: 179 118 81;
+  --color-accent-light: 223 172 137;
+  --color-accent-dark: 152 97 63;
+  --color-accent-muted: 197 139 101 / 0.12;
+
+  --glass-bg: rgba(255, 255, 255, 0.88);
+  --glass-card: rgba(255, 255, 255, 0.94);
+  --glass-border: rgba(0, 0, 0, 0.08);
+
+  --shadow-subtle: 0 2px 8px -2px rgba(0, 0, 0, 0.04);
+  --shadow-card: 0 4px 20px -2px rgba(0, 0, 0, 0.05), 0 1px 4px -1px rgba(0, 0, 0, 0.02);
+  --shadow-card-hover: 0 16px 32px -4px rgba(0, 0, 0, 0.08), 0 4px 12px -2px rgba(197, 139, 101, 0.16);
+  --shadow-glow: 0 0 30px -5px rgba(197, 139, 101, 0.22);
+}
+
+html.dark,
+body.dark {
+  /* DARK THEME
+     - Background: #101010
+     - Cards:      #181818
+     - Text:       #F6F6F3
+     - Secondary:  #A7A7A2
+     - Borders:    rgba(255, 255, 255, 0.08)
+     - Accent:     #D6A17D
+  */
+  --color-bg-app: 16 16 16;
+  --color-bg-card: 24 24 24;
+  --color-bg-elevated: 32 32 32;
+  --color-bg-subtle: 38 38 38;
+  --color-bg-muted: 48 48 48;
+
+  --color-text-primary: 246 246 243;
+  --color-text-secondary: 167 167 162;
+  --color-text-muted: 115 115 110;
+
+  --color-border-rgb: 255 255 255;
+  --color-border-subtle: rgba(255, 255, 255, 0.08);
+  --color-border-medium: rgba(255, 255, 255, 0.14);
+
+  --color-accent: 214 161 125;
+  --color-accent-hover: 226 184 154;
+  --color-accent-light: 236 197 171;
+  --color-accent-dark: 181 127 94;
+  --color-accent-muted: 214 161 125 / 0.15;
+
+  --glass-bg: rgba(24, 24, 24, 0.88);
+  --glass-card: rgba(24, 24, 24, 0.92);
+  --glass-border: rgba(255, 255, 255, 0.08);
+
+  --shadow-subtle: 0 2px 10px -2px rgba(0, 0, 0, 0.5);
+  --shadow-card: 0 6px 24px -4px rgba(0, 0, 0, 0.6);
+  --shadow-card-hover: 0 20px 40px -8px rgba(0, 0, 0, 0.8), 0 4px 16px -2px rgba(214, 161, 125, 0.18);
+  --shadow-glow: 0 0 35px -5px rgba(214, 161, 125, 0.35);
+}
+
+/* =============================================================================
+   BASE BODY & SMOOTH TRANSITION
+   ============================================================================= */
+
+body {
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+html:not(.dark) body {
+  background-color: #F7F7F5 !important;
+  color: #171717 !important;
+}
+
+html.dark body {
+  background-color: #101010 !important;
+  color: #F6F6F3 !important;
+}
+
+/* =============================================================================
+   CINEMATIC VIEW TRANSITION (Reference theme change)
+   ============================================================================= */
+
+::view-transition-group(root) {
+  animation-duration: 650ms;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+  display: block;
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  backface-visibility: hidden;
+  transform-origin: center center;
+}
+
+::view-transition-old(root) {
+  z-index: 1;
+}
+
+::view-transition-new(root) {
+  z-index: 9999;
+}
+
+/* CSS Fallback for browsers without View Transitions */
+html.theme-fallback-transitioning body {
+  transition: background-color 0.4s cubic-bezier(0.22, 1, 0.36, 1), color 0.35s ease !important;
+}
+
+/* =============================================================================
+   UNIVERSAL THEME OVERRIDES (Ensures 100% theme consistency & readability)
+   ============================================================================= */
+
+/* Selection styling */
+::selection {
+  background-color: rgba(197, 139, 101, 0.35);
+  color: inherit;
+}
+html.dark ::selection {
+  background-color: rgba(214, 161, 125, 0.35);
+  color: inherit;
+}
+
+/* Page Backgrounds */
+html:not(.dark) body,
+html:not(.dark) .bg-navy-950,
+html:not(.dark) [class*="bg-navy-950"] {
+  background-color: #F7F7F5 !important;
+}
+html.dark body,
+html.dark .bg-navy-950,
+html.dark [class*="bg-navy-950"] {
+  background-color: #101010 !important;
+}
+
+/* Card & Surface Backgrounds */
+html:not(.dark) .bg-navy-900,
+html:not(.dark) [class*="bg-navy-900"] {
+  background-color: #FFFFFF !important;
+}
+html.dark .bg-navy-900,
+html.dark [class*="bg-navy-900"] {
+  background-color: #181818 !important;
+}
+
+/* Elevated & Secondary Backgrounds */
+html:not(.dark) .bg-navy-850,
+html:not(.dark) [class*="bg-navy-850"] {
+  background-color: #F0F0ED !important;
+}
+html.dark .bg-navy-850,
+html.dark [class*="bg-navy-850"] {
+  background-color: #202020 !important;
+}
+
+/* Subtle & Input Surfaces */
+html:not(.dark) .bg-navy-800,
+html:not(.dark) [class*="bg-navy-800"] {
+  background-color: #EBEBE7 !important;
+}
+html.dark .bg-navy-800,
+html.dark [class*="bg-navy-800"] {
+  background-color: #262626 !important;
+}
+
+html:not(.dark) .bg-navy-750,
+html:not(.dark) [class*="bg-navy-750"] {
+  background-color: #E4E4DF !important;
+}
+html.dark .bg-navy-750,
+html.dark [class*="bg-navy-750"] {
+  background-color: #2E2E2E !important;
+}
+
+/* =============================================================================
+   TEXT COLOR OVERRIDES - 100% VISIBILITY IN LIGHT & DARK MODES
+   ============================================================================= */
+
+/* Primary Text & Headings (Light theme turns white/slate-100 text to deep #171717) */
+html:not(.dark) body,
+html:not(.dark) h1,
+html:not(.dark) h2,
+html:not(.dark) h3,
+html:not(.dark) h4,
+html:not(.dark) h5,
+html:not(.dark) h6,
+html:not(.dark) .text-white,
+html:not(.dark) .text-slate-100,
+html:not(.dark) .text-slate-200,
+html:not(.dark) [class*="text-slate-100"],
+html:not(.dark) [class*="text-slate-200"] {
+  color: #171717 !important;
+}
+
+/* Dark Theme Primary Text */
+html.dark body,
+html.dark .text-slate-100,
+html.dark .text-slate-200,
+html.dark [class*="text-slate-100"],
+html.dark [class*="text-slate-200"] {
+  color: #F6F6F3 !important;
+}
+
+/* Secondary Text */
+html:not(.dark) .text-slate-300,
+html:not(.dark) .text-slate-400,
+html:not(.dark) [class*="text-slate-300"],
+html:not(.dark) [class*="text-slate-400"] {
+  color: #4B5563 !important;
+}
+html.dark .text-slate-300,
+html.dark .text-slate-400,
+html.dark [class*="text-slate-300"],
+html.dark [class*="text-slate-400"] {
+  color: #A7A7A2 !important;
+}
+
+/* Muted Text */
+html:not(.dark) .text-slate-500,
+html:not(.dark) .text-slate-600,
+html:not(.dark) [class*="text-slate-500"],
+html:not(.dark) [class*="text-slate-600"] {
+  color: #6B7280 !important;
+}
+html.dark .text-slate-500,
+html.dark .text-slate-600,
+html.dark [class*="text-slate-500"],
+html.dark [class*="text-slate-600"] {
+  color: #73736E !important;
+}
+
+/* Inputs & Placeholders */
+html:not(.dark) input,
+html:not(.dark) select,
+html:not(.dark) textarea {
+  color: #171717 !important;
+}
+html:not(.dark) ::placeholder,
+html:not(.dark) input::placeholder,
+html:not(.dark) textarea::placeholder {
+  color: #9CA3AF !important;
+}
+
+/* Elements that MUST retain pure white text in light mode (solid accent buttons) */
+html:not(.dark) button.bg-brand-500,
+html:not(.dark) button.bg-brand-500 *,
+html:not(.dark) button.bg-brand-600,
+html:not(.dark) button.bg-brand-600 *,
+html:not(.dark) a.bg-brand-500,
+html:not(.dark) a.bg-brand-500 *,
+html:not(.dark) a.bg-brand-600,
+html:not(.dark) a.bg-brand-600 *,
+html:not(.dark) button.bg-emerald-500,
+html:not(.dark) button.bg-emerald-500 *,
+html:not(.dark) button.bg-emerald-600,
+html:not(.dark) button.bg-emerald-600 *,
+html:not(.dark) button.bg-red-500,
+html:not(.dark) button.bg-red-500 *,
+html:not(.dark) button.bg-red-600,
+html:not(.dark) button.bg-red-600 *,
+html:not(.dark) button.bg-violet-600,
+html:not(.dark) button.bg-violet-600 *,
+html:not(.dark) button.bg-indigo-600,
+html:not(.dark) button.bg-indigo-600 *,
+html:not(.dark) [class*="bg-brand-500"] button,
+html:not(.dark) [class*="bg-brand-500"] button *,
+html:not(.dark) .keep-white,
+html:not(.dark) .keep-white * {
+  color: #FFFFFF !important;
+}
+
+/* Subtle Borders */
+html:not(.dark) [class*="border-navy-"],
+html:not(.dark) [class*="border-slate-800"],
+html:not(.dark) [class*="border-slate-700"] {
+  border-color: rgba(0, 0, 0, 0.1) !important;
+}
+html.dark [class*="border-navy-"],
+html.dark [class*="border-slate-800"],
+html.dark [class*="border-slate-700"] {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+html:not(.dark) [class*="hover:border-navy-"]:hover,
+html:not(.dark) [class*="hover:border-slate-"]:hover {
+  border-color: rgba(0, 0, 0, 0.22) !important;
+}
+html.dark [class*="hover:border-navy-"]:hover,
+html.dark [class*="hover:border-slate-"]:hover {
+  border-color: rgba(255, 255, 255, 0.22) !important;
+}
+
+/* Warm Accent Highlights */
+html:not(.dark) .text-brand-300,
+html:not(.dark) .text-brand-400,
+html:not(.dark) .text-brand-500,
+html:not(.dark) .text-violet-400,
+html:not(.dark) .text-violet-300 {
+  color: #C58B65 !important;
+}
+html.dark .text-brand-300,
+html.dark .text-brand-400,
+html.dark .text-brand-500,
+html.dark .text-violet-400,
+html.dark .text-violet-300 {
+  color: #D6A17D !important;
+}
+
+html:not(.dark) .bg-brand-500,
+html:not(.dark) .bg-brand-600,
+html:not(.dark) .bg-violet-600 {
+  background-color: #C58B65 !important;
+}
+html:not(.dark) .hover\:bg-brand-600:hover,
+html:not(.dark) .hover\:bg-brand-500:hover {
+  background-color: #B47A55 !important;
+}
+
+html.dark .bg-brand-500,
+html.dark .bg-brand-600,
+html.dark .bg-violet-600 {
+  background-color: #D6A17D !important;
+}
+html.dark .hover\:bg-brand-600:hover,
+html.dark .hover\:bg-brand-500:hover {
+  background-color: #E2B89A !important;
+}
+
+
+/* =============================================================================
+   GLASSMORPHISM & UTILITIES
+   ============================================================================= */
+
+@layer utilities {
+  .text-gradient-brand {
+    background: linear-gradient(135deg, rgb(var(--color-text-primary)) 0%, rgb(var(--color-accent)) 65%, rgb(var(--color-accent-light)) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .text-gradient-accent {
+    background: linear-gradient(135deg, rgb(var(--color-accent)) 0%, rgb(var(--color-accent-hover)) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .glass-dark {
+    background: var(--glass-bg);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid var(--glass-border);
+  }
+
+  .glass-card {
+    background: var(--glass-card);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--shadow-card);
+  }
+
+  .glass-card-hover {
+    transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease, border-color 0.2s ease;
+  }
+
+  .glass-card-hover:hover {
+    transform: translateY(-2px);
+    border-color: rgb(var(--color-accent) / 0.4);
+    box-shadow: var(--shadow-card-hover);
+  }
+
+  .hero-glow-bg {
+    background-image: 
+      radial-gradient(ellipse 70% 45% at 50% -15%, rgb(var(--color-accent) / 0.12), transparent 70%),
+      radial-gradient(ellipse 50% 35% at 85% 15%, rgb(var(--color-accent-light) / 0.08), transparent 60%);
+  }
+}
+
+/* Scrollbars */
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+::-webkit-scrollbar-track {
+  background: rgb(var(--color-bg-app));
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border-subtle);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-border-medium);
+}
+
+/* Reduced motion accessibility */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none !important;
+    filter: none !important;
+    transform: none !important;
+    clip-path: none !important;
+  }
+}
+
