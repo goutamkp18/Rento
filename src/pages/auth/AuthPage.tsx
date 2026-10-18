@@ -101,26 +101,30 @@ export const AuthPage: React.FC<AuthPageProps> = ({ initialMode = 'login' }) => 
   };
 
   const handleSuccessfulAuth = async (authUser: { id: string; role: UserRole }, isNewSignup: boolean) => {
-    // 1. Mandatory Owner Onboarding Workflow:
-    // Landing Page → Register a PG → Owner Login/Signup → Choose Subscription Plan → Checkout → Demo Payment → Property Registration → Owner Dashboard.
+    // 1. Owner Onboarding Workflow with 30-Day Free Trial:
     if (authUser.role === 'owner') {
+      const sub = await subscriptionService.getOwnerSubscription(authUser.id);
+      const hasActiveOrTrial =
+        sub &&
+        (sub.status === 'active' ||
+          sub.status === 'trialing' ||
+          sub.status === 'trial_eligible' ||
+          sub.trial_status === 'eligible' ||
+          sub.trial_status === 'active');
+
+      if (redirectParam && redirectParam !== '/owner/plans' && redirectParam !== '/owner/checkout') {
+        setIntendedDestination(null);
+        navigate(redirectParam);
+        return;
+      }
+
       if (isNewSignup) {
         navigate('/owner/plans');
         return;
       } else {
-        // Existing owner login must check the stored demo subscription status
-        const sub = await subscriptionService.getOwnerSubscription(authUser.id);
-        const hasActive = sub && sub.status === 'active';
-
-        if (hasActive) {
-          if (redirectParam && redirectParam !== '/owner/plans' && redirectParam !== '/owner/checkout') {
-            setIntendedDestination(null);
-            navigate(redirectParam);
-          } else {
-            navigate('/owner/dashboard');
-          }
+        if (hasActiveOrTrial) {
+          navigate('/owner/dashboard');
         } else {
-          // If no active plan, direct to mandatory subscription plan selection
           navigate('/owner/plans');
         }
         return;

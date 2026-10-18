@@ -29,6 +29,10 @@ export const OwnerLayout: React.FC = () => {
     listingCount,
     listingLimit,
     remainingCapacity,
+    trialInfo,
+    isTrialActive,
+    isTrialEligible,
+    isTrialExpired,
   } = useSubscription();
   const navigate = useNavigate();
   const location = useLocation();
@@ -203,13 +207,39 @@ export const OwnerLayout: React.FC = () => {
               <div className="p-3 rounded-xl bg-navy-950/80 border border-navy-800 text-[11px] text-slate-400">
                 <div className="flex items-center justify-between">
                   <p className="font-semibold text-slate-300">
-                    Plan: {currentPlan ? currentPlan.name : 'No Active Plan'}
+                    {isTrialActive
+                      ? '30-Day Free Trial'
+                      : isTrialEligible
+                      ? '30-Day Free Trial'
+                      : isTrialExpired
+                      ? 'Free Basic Plan'
+                      : `Plan: ${currentPlan ? currentPlan.name : 'No Active Plan'}`}
                   </p>
-                  {hasActiveSubscription && (
+                  {isTrialActive ? (
+                    <span
+                      className={`text-[9px] font-bold px-1.5 py-0.2 rounded border ${
+                        trialInfo.reminderStage === '1_day'
+                          ? 'bg-rose-500/20 text-rose-300 border-rose-500/30 animate-pulse'
+                          : trialInfo.reminderStage === '3_days'
+                          ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                          : 'bg-violet-500/20 text-violet-300 border-violet-500/30'
+                      }`}
+                    >
+                      {trialInfo.daysRemaining}d left
+                    </span>
+                  ) : isTrialEligible ? (
+                    <span className="text-[9px] font-bold text-blue-400 bg-blue-500/10 px-1.5 py-0.2 rounded border border-blue-500/20">
+                      Eligible
+                    </span>
+                  ) : isTrialExpired ? (
+                    <span className="text-[9px] font-bold text-amber-400 bg-amber-500/10 px-1.5 py-0.2 rounded border border-amber-500/20">
+                      Expired
+                    </span>
+                  ) : hasActiveSubscription ? (
                     <span className="text-[9px] font-bold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.2 rounded border border-emerald-500/20">
                       Active
                     </span>
-                  )}
+                  ) : null}
                 </div>
                 <p className="mt-1 text-slate-400">
                   {listingCount} of {listingLimit === Infinity ? 'Unlimited' : `${listingLimit} PGs`} used

@@ -9,12 +9,15 @@ import {
   Building2,
   GraduationCap,
   Info,
-  Check
+  Check,
+  Clock,
+  AlertCircle
 } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
 import { useAuth } from '../../context/AuthContext';
 import { useStudentSubscription } from '../../context/StudentSubscriptionContext';
+import { useSubscription } from '../../context/SubscriptionContext';
 import {
   OWNER_SUBSCRIPTION_PLANS,
   STUDENT_SUBSCRIPTION_PLAN,
@@ -29,6 +32,7 @@ export const PricingPage: React.FC = () => {
   const navigate = useNavigate();
   const { user, isAuthenticated } = useAuth();
   const { hasStudentSubscription, openPaywall } = useStudentSubscription();
+  const { trialInfo, isTrialActive, isTrialEligible, isTrialExpired } = useSubscription();
   const [activeSegment, setActiveSegment] = useState<'all' | 'owners' | 'students'>('all');
 
   const handleStudentAction = () => {
@@ -42,6 +46,14 @@ export const PricingPage: React.FC = () => {
   const handleOwnerAction = (planId?: SubscriptionPlanId) => {
     if (isAuthenticated && user?.role === 'owner') {
       navigate(planId ? `/owner/checkout?plan=${planId}` : '/owner/plans');
+    } else {
+      navigate('/signup?role=owner');
+    }
+  };
+
+  const handleStartTrial = () => {
+    if (isAuthenticated && user?.role === 'owner') {
+      navigate('/owner/listings/new');
     } else {
       navigate('/signup?role=owner');
     }
@@ -118,14 +130,185 @@ export const PricingPage: React.FC = () => {
           </div>
         </div>
 
+        {/* 30-Day Free Trial Banner for PG Owners */}
+        <div className="bg-gradient-to-br from-navy-900 via-navy-900 to-violet-950/40 border border-violet-500/35 rounded-3xl p-6 sm:p-8 space-y-6 shadow-2xl">
+          
+          {/* Reminders for 7, 3, 1 day (if logged in owner with active trial) */}
+          {isTrialActive && trialInfo.reminderStage && (
+            <div
+              className={`p-3.5 rounded-2xl border flex items-center justify-between gap-3 text-xs ${
+                trialInfo.reminderStage === '1_day'
+                  ? 'bg-rose-500/10 border-rose-500/40 text-rose-200'
+                  : trialInfo.reminderStage === '3_days'
+                  ? 'bg-amber-500/10 border-amber-500/40 text-amber-200'
+                  : 'bg-violet-500/10 border-violet-500/30 text-violet-200'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <Clock className="w-4 h-4 shrink-0 text-amber-400" />
+                <span>
+                  {trialInfo.reminderStage === '1_day'
+                    ? `Final Day Reminder: Trial ends in ${trialInfo.hoursRemaining} hours. Seamless transition to free Basic plan.`
+                    : trialInfo.reminderStage === '3_days'
+                    ? `3 Days Remaining on your 30-day free trial. Choose a plan below to retain 3 listing slots.`
+                    : `7 Days Remaining on your 30-day free trial. Explore all Pro capabilities with zero charges.`}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleOwnerAction('pro')}
+                className="font-bold underline hover:text-white shrink-0"
+              >
+                Upgrade to Pro →
+              </button>
+            </div>
+          )}
+
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 pb-6 border-b border-navy-800">
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-violet-300 bg-violet-500/15 px-3 py-1 rounded-full border border-violet-500/30 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-violet-400" />
+                  Eligible PG Owners
+                </span>
+                <span className="text-[11px] font-bold text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded-full border border-emerald-500/20">
+                  No Credit Card Required
+                </span>
+                {isTrialActive && (
+                  <span className="text-[11px] font-bold text-emerald-400 bg-emerald-500/20 px-2.5 py-0.5 rounded-full border border-emerald-500/30">
+                    {trialInfo.daysRemaining} Days Remaining
+                  </span>
+                )}
+              </div>
+              <h2 className="text-2xl sm:text-3xl font-black text-white">
+                Start your 30-day free trial
+              </h2>
+              <p className="text-xs sm:text-sm text-slate-300 max-w-2xl leading-relaxed">
+                Eligible new PG owners receive a genuine 30-day free trial with access to our Pro management suite. Countdown begins when you submit your first valid PG listing for review.
+              </p>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 shrink-0">
+              <Button
+                variant="glow"
+                size="lg"
+                onClick={handleStartTrial}
+                className="font-bold shadow-lg shadow-violet-500/25"
+              >
+                {isTrialActive ? 'Open Owner Dashboard →' : 'Start your 30-day free trial →'}
+              </Button>
+            </div>
+          </div>
+
+          {/* Trial Details Grid: Dates, Days, Guarantee */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+            <div className="p-3.5 rounded-2xl bg-navy-950/80 border border-navy-800 space-y-1">
+              <span className="text-slate-400 text-[11px] block">Trial Start Date</span>
+              <p className="text-sm font-bold text-white">
+                {trialInfo.startDate
+                  ? new Date(trialInfo.startDate).toLocaleDateString('en-IN', {
+                      day: 'numeric',
+                      month: 'short',
+                      year: 'numeric',
+                    })
+                  : 'On First Listing Review'}
+              </p>
+              <span className="text-[10px] text-slate-500 block">
+                Authoritative server timestamp
+              </span>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-navy-950/80 border border-navy-800 space-y-1">
+              <span className="text-slate-400 text-[11px] block">Trial Expiry Date</span>
+              <p className="text-sm font-bold text-white">
+                {trialInfo.endDate
+                  ? new Date(trialInfo.endDate).toLocaleDateString('en-IN', {
+                      day: 'numeric',
+                      month: 'short',
+                      year: 'numeric',
+                    })
+                  : '+30 Days from Submission'}
+              </p>
+              <span className="text-[10px] text-slate-500 block">
+                Zero automatic charges
+              </span>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-navy-950/80 border border-navy-800 space-y-1">
+              <span className="text-slate-400 text-[11px] block">Days Remaining</span>
+              <p className="text-sm font-bold text-gradient-brand">
+                {isTrialActive
+                  ? `${trialInfo.daysRemaining} Days (${trialInfo.hoursRemaining}h)`
+                  : '30 Days Complete Trial'}
+              </p>
+              <span className="text-[10px] text-slate-500 block">
+                Full Pro tier features
+              </span>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-navy-950/80 border border-navy-800 space-y-1">
+              <span className="text-slate-400 text-[11px] block">Payment Method</span>
+              <p className="text-sm font-bold text-emerald-400">None Required</p>
+              <span className="text-[10px] text-slate-500 block">
+                No credit card needed to activate
+              </span>
+            </div>
+          </div>
+
+          {/* Features Included in the Trial */}
+          <div className="space-y-3 pt-2">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
+              Features Included in the 30-Day Free Trial
+            </span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 text-xs text-slate-300">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>Manage up to 3 PG properties</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>Full room &amp; bed inventory management</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>Photo uploads to secure storage</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>Student enquiry &amp; visit booking inbox</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>Priority placement in student search</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>Real-time occupancy analytics &amp; overview</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Explanation of Expiry */}
+          <div className="p-4 rounded-2xl bg-navy-950 border border-navy-800 text-xs text-slate-300 space-y-1.5">
+            <div className="flex items-center gap-2 font-bold text-white text-xs">
+              <Info className="w-4 h-4 text-brand-400" />
+              <span>What happens when the 30-day trial expires?</span>
+            </div>
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              When your trial concludes, <strong>you will not be charged automatically</strong>. Your owner account will switch to the free Basic plan (1 PG listing limit). All your property records, room inventories, uploaded photos, and enquiry history remain permanently preserved. If you have more than 1 listing, you can select which listing remains active or upgrade anytime to Starter (₹49/mo + 18% GST = ₹57.82), Pro (₹99/mo + 18% GST = ₹116.82), or Pro Plus (₹199/mo + 18% GST = ₹234.82).
+            </p>
+          </div>
+
+        </div>
+
         {/* 3 Owner SaaS Plans Header */}
         <div className="space-y-4">
           <div className="text-center space-y-1">
             <h2 className="text-2xl sm:text-3xl font-extrabold text-white">
-              Mandatory PG Owner Subscriptions
+              PG Owner Paid Subscription Plans
             </h2>
             <p className="text-xs sm:text-sm text-slate-400">
-              Select a tier matching your property portfolio before onboarding your properties
+              Transparent, low monthly tiers with illustrative 18% GST. Upgrade anytime to expand property capacity.
             </p>
           </div>
 

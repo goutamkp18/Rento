@@ -185,7 +185,27 @@ export type SubscriptionStatus =
   | 'active'
   | 'payment_failed'
   | 'expired'
-  | 'cancelled';
+  | 'cancelled'
+  | 'trialing'
+  | 'trial_eligible';
+
+export type TrialStatus = 'eligible' | 'active' | 'expired' | 'converted';
+
+export interface TrialInfo {
+  isEligible: boolean;
+  isActive: boolean;
+  isExpired: boolean;
+  isConverted: boolean;
+  hasStarted: boolean;
+  startDate: string | null;
+  endDate: string | null;
+  daysRemaining: number;
+  hoursRemaining: number;
+  minutesRemaining: number;
+  trialPlanId: SubscriptionPlanId;
+  trialListingLimit: number;
+  reminderStage?: '7_days' | '3_days' | '1_day' | null;
+}
 
 export interface SubscriptionPlan {
   id: SubscriptionPlanId;
@@ -220,12 +240,23 @@ export interface OwnerSubscription {
   gst_amount: number;
   total_price: number;
   total_monthly_price?: number;
+  listing_limit?: number;
   start_date: string;
   renewal_date: string;
   payment_reference?: string;
   demo_payment_reference?: string;
   created_at: string;
   updated_at: string;
+
+  // 30-Day Free Trial fields
+  trial_status?: TrialStatus;
+  trial_start?: string | null;
+  trial_end?: string | null;
+  trial_plan_id?: SubscriptionPlanId;
+  trial_listing_limit?: number;
+  selected_plan_id?: SubscriptionPlanId;
+  payment_status?: 'none' | 'pending' | 'paid' | 'failed';
+  active_listing_id?: string;
 }
 
 export interface StudentSubscription {

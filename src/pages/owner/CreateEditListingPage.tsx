@@ -75,6 +75,12 @@ export const CreateEditListingPage: React.FC = () => {
     canAddListing,
     listingCount,
     listingLimit,
+    capacityReason,
+    trialInfo,
+    isTrialActive,
+    isTrialEligible,
+    isTrialExpired,
+    startTrialOnFirstListing,
     isLoading: isSubLoading,
     refreshSubscription,
   } = useSubscription();
@@ -117,26 +123,26 @@ export const CreateEditListingPage: React.FC = () => {
   };
 
 
-  // Mandatory subscription check & listing limit enforcement
+  // Mandatory subscription or 30-day free trial check & listing limit enforcement
   useEffect(() => {
     if (isEditing || isSubLoading) return;
 
     if (!hasActiveSubscription) {
       showToast({
         type: 'error',
-        title: 'Subscription Required',
-        message: 'A mandatory subscription is required before registering a PG property on Rento.',
+        title: 'Subscription or Free Trial Required',
+        message: 'A 30-day free trial or active subscription is required to register a PG property.',
       });
       navigate('/owner/plans', { replace: true });
     } else if (!canAddListing) {
       showToast({
         type: 'error',
         title: 'Listing Limit Reached',
-        message: `You have reached the maximum allowed listings (${listingLimit} PG${listingLimit > 1 ? 's' : ''}) on your ${currentPlan?.name} plan. Please upgrade to add more.`,
+        message: capacityReason || `You have reached the maximum allowed listings (${listingLimit} PG${listingLimit > 1 ? 's' : ''}). Please upgrade to add more.`,
       });
       navigate('/owner/subscription', { replace: true });
     }
-  }, [isEditing, isSubLoading, hasActiveSubscription, canAddListing, listingLimit, currentPlan, navigate, showToast]);
+  }, [isEditing, isSubLoading, hasActiveSubscription, canAddListing, listingLimit, capacityReason, navigate, showToast]);
 
   // STEP A: OWNER INFORMATION
   const [ownerFullName, setOwnerFullName] = useState(user?.full_name || '');
@@ -694,9 +700,17 @@ export const CreateEditListingPage: React.FC = () => {
         type: 'success',
         title: publishForReview ? 'Submitted for Review' : 'Draft Saved',
         message: publishForReview
-          ? `${name} and ${finalImages.length} photo(s) saved to Supabase and submitted for review.`
+          ? `${name} and ${finalImages.length} photo(s) submitted for review. 30-Day Free Trial countdown active!`
           : `${name} and ${finalImages.length} photo(s) saved as draft in Supabase.`,
       });
+
+      if (publishForReview) {
+        try {
+          await startTrialOnFirstListing();
+        } catch (trialErr) {
+          console.warn('Could not trigger trial start on listing submission:', trialErr);
+        }
+      }
 
       await refreshSubscription();
 
@@ -1887,6 +1901,28 @@ export const CreateEditListingPage: React.FC = () => {
               <span className="text-slate-400">Total Bed Inventory:</span>
               <span className="font-bold text-white">{totalBeds} Beds ({availableBeds} Vacant)</span>
             </div>
+          </div>
+
+          {/* 30-Day Free Trial Countdown Card */}
+          <div className="p-3.5 rounded-xl bg-gradient-to-r from-violet-950/40 to-navy-950 border border-violet-500/30 text-xs text-left space-y-2">
+            <div className="flex items-center gap-2 text-violet-300 font-bold">
+              <Sparkles className="w-4 h-4 text-violet-400" />
+              <span>30-Day Free Trial Officially Activated!</span>
+            </div>
+            <p className="text-[11px] text-slate-300 leading-relaxed">
+              Your 30-day trial countdown has begun upon submitting your first property listing for review. Enjoy access to room & bed management, photo uploads, and student enquiries.
+            </p>
+            <div className="pt-2 border-t border-violet-500/20 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+              <span className="text-slate-400">
+                Duration: <strong className="text-white">30 Days</strong> (Pro Plan Features)
+              </span>
+              <span className="text-emerald-400 font-semibold">
+                ✓ No Credit Card Required
+              </span>
+            </div>
+            <p className="text-[10px] text-slate-400">
+              Zero automatic billing upon expiry. At trial end, you will automatically switch to the free Basic plan (1 PG limit) without losing any property data.
+            </p>
           </div>
 
           <p className="text-xs text-slate-400 leading-relaxed">

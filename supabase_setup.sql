@@ -194,8 +194,17 @@ CREATE TABLE IF NOT EXISTS public.subscriptions (
   current_period_start TIMESTAMPTZ DEFAULT NOW(),
   current_period_end TIMESTAMPTZ DEFAULT NOW() + INTERVAL '30 days',
   payment_method TEXT DEFAULT 'upi',
+  trial_status TEXT DEFAULT 'eligible' CHECK (trial_status IN ('eligible', 'active', 'expired', 'converted')),
+  trial_start TIMESTAMPTZ,
+  trial_end TIMESTAMPTZ,
+  trial_plan_id TEXT DEFAULT 'pro' CHECK (trial_plan_id IN ('basic', 'pro', 'pro_plus')),
+  trial_listing_limit INTEGER DEFAULT 3,
+  selected_plan_id TEXT,
+  payment_status TEXT DEFAULT 'none' CHECK (payment_status IN ('none', 'pending', 'paid', 'failed')),
+  active_listing_id TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  CONSTRAINT unique_owner_subscription UNIQUE (owner_id)
 );
 
 -- ==============================================================================
@@ -301,6 +310,84 @@ CREATE POLICY "Students can manage favourites" ON public.favourites FOR ALL USIN
 -- SUBSCRIPTIONS
 DROP POLICY IF EXISTS "Owners can view own subscriptions" ON public.subscriptions;
 CREATE POLICY "Owners can view own subscriptions" ON public.subscriptions FOR SELECT USING (auth.uid() = owner_id);
+
+DROP POLICY IF EXISTS "Owners can insert own subscriptions" ON public.subscriptions;
+CREATE POLICY "Owners can insert own subscriptions" ON public.subscriptions FOR INSERT WITH CHECK (auth.uid() = owner_id);
+
+DROP POLICY IF EXISTS "Owners can update own subscriptions" ON public.subscriptions;
+CREATE POLICY "Owners can update own subscriptions" ON public.subscriptions FOR UPDATE USING (auth.uid() = owner_id);
+
+-- TRIGGER: AUTOMATICALLY START 30-DAY TRIAL COUNTDOWN ON FIRST LISTING REVIEW SUBMISSION
+CREATE OR REPLACE FUNCTION public.handle_listing_submission_trial_trigger()
+RETURNS TRIGGER AS $$
+DECLARE
+  existing_sub RECORD;
+  now_ts TIMESTAMPTZ := NOW();
+  expiry_ts TIMESTAMPTZ := NOW() + INTERVAL '30 days';
+BEGIN
+  IF NEW.publication_status IN ('pending_review', 'under_review', 'published') THEN
+    SELECT * INTO existing_sub FROM public.subscriptions WHERE owner_id = NEW.owner_id;
+
+    IF NOT FOUND THEN
+      INSERT INTO public.subscriptions (
+        owner_id,
+        plan_id,
+        status,
+        base_price,
+        gst_amount,
+        total_price,
+        listing_limit,
+        current_period_start,
+        current_period_end,
+        payment_method,
+        trial_status,
+        trial_start,
+        trial_end,
+        trial_plan_id,
+        trial_listing_limit,
+        payment_status
+      ) VALUES (
+        NEW.owner_id,
+        'pro',
+        'trialing',
+        0,
+        0,
+        0,
+        3,
+        now_ts,
+        expiry_ts,
+        'free_trial',
+        'active',
+        now_ts,
+        expiry_ts,
+        'pro',
+        3,
+        'none'
+      );
+    ELSIF existing_sub.trial_status = 'eligible' AND existing_sub.trial_start IS NULL THEN
+      UPDATE public.subscriptions
+      SET
+        trial_status = 'active',
+        trial_start = now_ts,
+        trial_end = expiry_ts,
+        status = 'trialing',
+        plan_id = 'pro',
+        listing_limit = 3,
+        current_period_start = now_ts,
+        current_period_end = expiry_ts,
+        payment_method = 'free_trial',
+        updated_at = now_ts
+      WHERE owner_id = NEW.owner_id;
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS trg_start_trial_on_listing_submit ON public.pg_listings;
+CREATE TRIGGER trg_start_trial_on_listing_submit
+  AFTER INSERT OR UPDATE OF publication_status ON public.pg_listings
+  FOR EACH ROW EXECUTE PROCEDURE public.handle_listing_submission_trial_trigger();
 
 -- STORAGE BUCKETS
 INSERT INTO storage.buckets (id, name, public)

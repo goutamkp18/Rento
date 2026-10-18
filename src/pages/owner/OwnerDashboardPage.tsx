@@ -19,7 +19,8 @@ import {
   CheckCircle2,
   ExternalLink,
   ChevronRight,
-  Trash2
+  Trash2,
+  Info
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
@@ -47,6 +48,12 @@ export const OwnerDashboardPage: React.FC = () => {
     listingCount: subListingCount,
     remainingCapacity,
     capacityReason,
+    trialInfo,
+    isTrialActive,
+    isTrialEligible,
+    isTrialExpired,
+    activeListingId,
+    setActiveListingForBasic,
   } = useSubscription();
   const { showToast } = useToast();
 
@@ -172,47 +179,237 @@ export const OwnerDashboardPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Plan Entitlements & Capacity Card */}
-      <div className="rounded-2xl p-5 bg-navy-900 border border-navy-750 shadow-xl space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-violet-500/10 border border-violet-500/20 text-violet-400 flex items-center justify-center shrink-0">
-              <CreditCard className="w-5 h-5" />
+      {/* Reminder Alerts for 7 Days, 3 Days, 1 Day */}
+      {isTrialActive && trialInfo.reminderStage && (
+        <div
+          className={`p-4 rounded-2xl border flex items-start justify-between gap-3 shadow-lg transition-all ${
+            trialInfo.reminderStage === '1_day'
+              ? 'bg-rose-950/40 border-rose-500/50 text-rose-200'
+              : trialInfo.reminderStage === '3_days'
+              ? 'bg-amber-950/40 border-amber-500/50 text-amber-200'
+              : 'bg-violet-950/40 border-violet-500/40 text-violet-200'
+          }`}
+        >
+          <div className="flex items-start gap-3">
+            <Clock
+              className={`w-5 h-5 shrink-0 mt-0.5 ${
+                trialInfo.reminderStage === '1_day'
+                  ? 'text-rose-400 animate-pulse'
+                  : trialInfo.reminderStage === '3_days'
+                  ? 'text-amber-400'
+                  : 'text-violet-400'
+              }`}
+            />
+            <div className="space-y-1">
+              <p className="font-bold text-sm text-white">
+                {trialInfo.reminderStage === '1_day'
+                  ? `Final Day Reminder: 30-Day Free Trial Expires Soon!`
+                  : trialInfo.reminderStage === '3_days'
+                  ? `3 Days Remaining on Your 30-Day Free Trial`
+                  : `7 Days Remaining on Your 30-Day Free Trial`}
+              </p>
+              <p className="text-xs leading-relaxed text-slate-300">
+                {trialInfo.reminderStage === '1_day'
+                  ? `Your trial expires on ${trialInfo.endDate ? new Date(trialInfo.endDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'soon'} (${trialInfo.hoursRemaining} hours left). You will automatically switch to the free Basic plan (1 PG limit). No credit card will be charged.`
+                  : trialInfo.reminderStage === '3_days'
+                  ? `Your trial ends on ${trialInfo.endDate ? new Date(trialInfo.endDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'soon'}. Upgrade to Pro to continue managing up to 3 listings seamlessly, or switch to the free Basic plan.`
+                  : `You have 7 days left to explore all Pro features without payment. At expiry, you smoothly transition to the free Basic plan (1 listing limit). Zero automatic charges.`}
+              </p>
+            </div>
+          </div>
+          <Link to="/owner/subscription" className="shrink-0">
+            <Button
+              variant={trialInfo.reminderStage === '1_day' ? 'primary' : 'outline'}
+              size="sm"
+              className="text-xs font-bold"
+            >
+              View Upgrade Options →
+            </Button>
+          </Link>
+        </div>
+      )}
+
+      {/* Trial Expired Alert with Active Listing Selector */}
+      {isTrialExpired && (
+        <div className="p-5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-200 shadow-xl space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <p className="font-bold text-white text-sm">30-Day Free Trial Has Expired</p>
+                <p className="text-xs text-slate-300 leading-relaxed max-w-2xl">
+                  Your account has switched to the free Basic plan (1 active PG listing limit). <strong>You were not charged.</strong> All your properties, rooms, beds, and enquiries have been safely preserved.
+                  {totalListings > 1 &&
+                    ` Since you have ${totalListings} listings saved, please designate which listing remains active, or upgrade to Pro to keep all properties active.`}
+                </p>
+              </div>
+            </div>
+            <Link to="/owner/subscription" className="shrink-0">
+              <Button variant="glow" size="sm" className="font-bold text-xs">
+                Upgrade to Pro (₹99/mo)
+              </Button>
+            </Link>
+          </div>
+
+          {/* Active Listing Chooser for Basic Plan */}
+          {totalListings > 1 && (
+            <div className="pt-3 border-t border-amber-500/20 space-y-2">
+              <span className="font-bold text-white text-xs block">
+                Choose Which Property Remains Active on Free Basic Plan:
+              </span>
+              <div className="flex flex-wrap gap-2">
+                {listings.map(l => {
+                  const isActive = activeListingId ? activeListingId === l.id : listings[0]?.id === l.id;
+                  return (
+                    <button
+                      key={l.id}
+                      onClick={() => setActiveListingForBasic(l.id)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all flex items-center gap-1.5 ${
+                        isActive
+                          ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300 shadow-sm'
+                          : 'bg-navy-950 border-navy-800 text-slate-400 hover:text-white hover:border-slate-600'
+                      }`}
+                    >
+                      <span>{isActive ? '✓ Active:' : 'Select:'}</span>
+                      <span>{l.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 30-Day Free Trial / Plan Entitlements & Capacity Card */}
+      <div className="rounded-3xl p-6 sm:p-7 bg-navy-900 border border-navy-750 shadow-2xl space-y-6">
+        
+        {/* Top Trial Header */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 pb-5 border-b border-navy-800">
+          <div className="flex items-start sm:items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-violet-500/20 to-brand-500/20 border border-violet-500/30 text-violet-400 flex items-center justify-center shrink-0">
+              <Sparkles className="w-6 h-6" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-bold text-white">
-                  {currentPlan ? `${currentPlan.name} Plan` : 'No Active Plan'}
-                </span>
-                {hasActiveSubscription ? (
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                    Active Demo
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-xl sm:text-2xl font-black text-white">
+                  {isTrialActive
+                    ? '30-Day Free Trial Active'
+                    : isTrialEligible
+                    ? 'Start your 30-day free trial'
+                    : isTrialExpired
+                    ? 'Free Basic Plan (Trial Expired)'
+                    : `${currentPlan?.name || 'SaaS'} Plan`}
+                </h2>
+                {isTrialActive ? (
+                  <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                    {trialInfo.daysRemaining} Days Left
                   </span>
-                ) : (
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-500/10 text-red-400 border border-red-500/20">
-                    Inactive
+                ) : isTrialEligible ? (
+                  <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-violet-500/15 text-violet-300 border border-violet-500/30">
+                    No Credit Card Required
                   </span>
-                )}
+                ) : isTrialExpired ? (
+                  <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                    Free Tier (1 PG Limit)
+                  </span>
+                ) : hasActiveSubscription ? (
+                  <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                    Active Paid Plan
+                  </span>
+                ) : null}
               </div>
-              <p className="text-xs text-slate-400 mt-0.5">
-                {currentPlan
-                  ? `${formatINR(currentPlan.basePrice)}/mo + 18% GST (${formatINR(calculatePlanPrice(currentPlan.basePrice, DEFAULT_GST_RATE).totalMonthlyPrice)}/mo)`
-                  : 'Subscription required to list properties'}
+
+              <p className="text-xs text-slate-300 mt-1 max-w-2xl leading-relaxed">
+                {isTrialActive
+                  ? `Your 30-day free trial started when you submitted your first listing for review. Enjoy access to room & bed management, photo uploads, and student enquiries.`
+                  : isTrialEligible
+                  ? `Eligible new PG owner free trial. Countdown begins when you submit your first PG listing for review. Full access to add properties, upload photos, manage beds, and receive enquiries.`
+                  : isTrialExpired
+                  ? `Your trial period has concluded. Your account was automatically switched to the free Basic plan with zero charges. Upgrade anytime to restore multi-property capacity.`
+                  : currentPlan?.description || 'Manage properties with Rento owner suite.'}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+            {isTrialEligible && canAddListing && (
+              <Link to="/owner/listings/new">
+                <Button variant="glow" size="sm" leftIcon={<Plus className="w-4 h-4" />}>
+                  Create First Listing
+                </Button>
+              </Link>
+            )}
             <Link to="/owner/subscription">
               <Button variant="outline" size="sm" leftIcon={<TrendingUp className="w-3.5 h-3.5 text-violet-400" />}>
-                Manage Subscription
+                {isTrialActive ? 'Upgrade / Manage Trial' : 'Subscription Details'}
               </Button>
             </Link>
           </div>
         </div>
 
-        {/* Capacity Bar */}
-        <div className="pt-3 border-t border-navy-800 space-y-2">
+        {/* Trial Dates & Metadata Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+          <div className="p-3.5 rounded-2xl bg-navy-950/80 border border-navy-800 space-y-1">
+            <span className="text-slate-400 text-[11px] block font-medium">Trial Start Date</span>
+            <p className="text-sm font-bold text-white">
+              {trialInfo.startDate
+                ? new Date(trialInfo.startDate).toLocaleDateString('en-IN', {
+                    day: 'numeric',
+                    month: 'short',
+                    year: 'numeric',
+                  })
+                : 'Pending First Listing'}
+            </p>
+            <span className="text-[10px] text-slate-500 block">
+              {trialInfo.hasStarted ? 'Countdown begun' : 'Starts on review submission'}
+            </span>
+          </div>
+
+          <div className="p-3.5 rounded-2xl bg-navy-950/80 border border-navy-800 space-y-1">
+            <span className="text-slate-400 text-[11px] block font-medium">Trial Expiry Date</span>
+            <p className="text-sm font-bold text-white">
+              {trialInfo.endDate
+                ? new Date(trialInfo.endDate).toLocaleDateString('en-IN', {
+                    day: 'numeric',
+                    month: 'short',
+                    year: 'numeric',
+                  })
+                : '+30 Days From First PG'}
+            </p>
+            <span className="text-[10px] text-slate-500 block">
+              {isTrialExpired ? 'Expired — Switched to Basic' : 'No auto-debit at expiry'}
+            </span>
+          </div>
+
+          <div className="p-3.5 rounded-2xl bg-navy-950/80 border border-navy-800 space-y-1">
+            <span className="text-slate-400 text-[11px] block font-medium">Days Remaining</span>
+            <p className="text-sm font-bold text-gradient-brand">
+              {isTrialActive
+                ? `${trialInfo.daysRemaining} Days (${trialInfo.hoursRemaining} hrs)`
+                : isTrialEligible
+                ? '30 Days Available'
+                : isTrialExpired
+                ? '0 Days (Expired)'
+                : 'N/A (Paid Active)'}
+            </p>
+            <span className="text-[10px] text-slate-500 block">
+              {isTrialActive ? 'Live countdown' : 'Ready to start'}
+            </span>
+          </div>
+
+          <div className="p-3.5 rounded-2xl bg-navy-950/80 border border-navy-800 space-y-1">
+            <span className="text-slate-400 text-[11px] block font-medium">Auto-Billing Status</span>
+            <p className="text-sm font-bold text-emerald-400">₹0.00 (Zero Charge)</p>
+            <span className="text-[10px] text-slate-500 block">
+              No credit card required
+            </span>
+          </div>
+        </div>
+
+        {/* Capacity Bar & Limits */}
+        <div className="pt-2 space-y-2">
           <div className="flex items-center justify-between text-xs">
             <span className="text-slate-400">
               Active Listings: <strong className="text-white">{totalListings}</strong> of{' '}
@@ -224,34 +421,36 @@ export const OwnerDashboardPage: React.FC = () => {
               {listingLimit === Infinity
                 ? 'Unlimited capacity'
                 : remainingCapacity > 0
-                  ? `${remainingCapacity} slot${remainingCapacity !== 1 ? 's' : ''} remaining`
-                  : 'Maximum limit reached'}
+                ? `${remainingCapacity} slot${remainingCapacity !== 1 ? 's' : ''} remaining`
+                : 'Maximum limit reached'}
             </span>
           </div>
 
           <div className="w-full bg-navy-950 rounded-full h-2 overflow-hidden border border-navy-800">
             <div
-              className={`h-2 rounded-full transition-all duration-500 ${listingLimit === Infinity
-                ? 'bg-gradient-to-r from-violet-500 to-brand-400 w-full'
-                : totalListings >= listingLimit
+              className={`h-2 rounded-full transition-all duration-500 ${
+                listingLimit === Infinity
+                  ? 'bg-gradient-to-r from-violet-500 to-brand-400 w-full'
+                  : totalListings >= listingLimit
                   ? 'bg-amber-500'
                   : 'bg-gradient-to-r from-brand-500 to-violet-500'
-                }`}
+              }`}
               style={{
-                width: `${listingLimit === Infinity
-                  ? 100
-                  : Math.min(100, Math.round((totalListings / listingLimit) * 100))
-                  }%`,
+                width: `${
+                  listingLimit === Infinity
+                    ? 100
+                    : Math.min(100, Math.round((totalListings / listingLimit) * 100))
+                }%`,
               }}
             />
           </div>
 
-          {!canAddListing && (
+          {!canAddListing && !isTrialExpired && (
             <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300 flex items-center justify-between gap-2 mt-2">
               <div className="flex items-center gap-2">
                 <AlertCircle className="w-4 h-4 shrink-0" />
                 <span>
-                  Listing limit reached ({listingLimit} PG{listingLimit > 1 ? 's' : ''}). Upgrade to Pro Plus to add more properties.
+                  {capacityReason || `Listing limit reached (${listingLimit} PG${listingLimit > 1 ? 's' : ''}). Upgrade to Pro Plus to add more properties.`}
                 </span>
               </div>
               <Link to="/owner/subscription" className="shrink-0 font-bold underline hover:text-white text-[11px]">
@@ -260,6 +459,18 @@ export const OwnerDashboardPage: React.FC = () => {
             </div>
           )}
         </div>
+
+        {/* What Happens at Expiry & Transparent Pricing Explanation */}
+        <div className="p-4 rounded-2xl bg-navy-950/70 border border-navy-800 text-xs text-slate-300 space-y-2">
+          <div className="flex items-center gap-2 font-bold text-white text-xs">
+            <Info className="w-4 h-4 text-brand-400" />
+            <span>What happens when the 30-day trial expires?</span>
+          </div>
+          <p className="text-[11px] text-slate-400 leading-relaxed">
+            At expiry, you will <strong>never be charged automatically</strong>. Your account smoothly transitions to the free Basic plan (1 PG listing limit). All your property records, room inventories, uploaded photos, and student enquiry history are safely preserved. Upgrade options: Starter (₹49/mo + 18% GST = ₹57.82), Pro (₹99/mo + 18% GST = ₹116.82), Pro Plus (₹199/mo + 18% GST = ₹234.82).
+          </p>
+        </div>
+
       </div>
 
       {/* Dynamic KPI Metric Cards */}

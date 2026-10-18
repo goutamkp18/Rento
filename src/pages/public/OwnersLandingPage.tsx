@@ -57,14 +57,17 @@ export const OwnersLandingPage: React.FC = () => {
               rightIcon={<ArrowRight className="w-4 h-4" />}
               onClick={handleListProperty}
             >
-              List Your Property
+              Start 30-Day Free Trial
             </Button>
-            <Link to="/owner/dashboard">
+            <Link to="/pricing">
               <Button variant="secondary" size="lg">
-                View Owner Dashboard Demo
+                View Plans &amp; Pricing
               </Button>
             </Link>
           </div>
+          <p className="text-xs text-emerald-400 font-semibold pt-1">
+            ✓ No Credit Card Required • Pro features included • Countdown starts on first listing review
+          </p>
         </div>
 
         {/* Key Features Grid */}

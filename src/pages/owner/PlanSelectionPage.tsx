@@ -43,53 +43,99 @@ export const PlanSelectionPage: React.FC = () => {
       <main className="flex-1 py-10 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto space-y-12">
         
-        {/* Onboarding Stepper Header */}
-        <div className="max-w-3xl mx-auto text-center space-y-4">
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-violet-500/10 border border-violet-500/25 text-violet-300 text-xs font-semibold">
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Step 2 of 4: Mandatory Owner Subscription</span>
-          </div>
+          {/* Onboarding Stepper Header */}
+          <div className="max-w-3xl mx-auto text-center space-y-4">
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-violet-500/10 border border-violet-500/25 text-violet-300 text-xs font-semibold">
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>New PG Owner Welcome Offer</span>
+            </div>
 
-          <h1 className="text-3xl sm:text-5xl font-extrabold text-white tracking-tight">
-            Choose Your <span className="text-gradient-brand">Owner SaaS Plan</span>
-          </h1>
+            <h1 className="text-3xl sm:text-5xl font-extrabold text-white tracking-tight">
+              Start Your <span className="text-gradient-brand">30-Day Free Trial</span>
+            </h1>
 
-          <p className="text-sm sm:text-base text-slate-300 max-w-2xl mx-auto leading-relaxed">
-            A monthly subscription is required before listing your PG property on Rento.
-            Select a plan tailored to your property portfolio.
-          </p>
-
-          {/* Stepper Dots */}
-          <div className="flex items-center justify-center gap-3 pt-2 text-xs font-semibold">
-            <span className="flex items-center gap-1.5 text-emerald-400">
-              <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-[10px]">✓</span>
-              <span>1. Account Created</span>
-            </span>
-            <span className="text-slate-600">→</span>
-            <span className="flex items-center gap-1.5 text-violet-300 bg-violet-500/10 px-3 py-1 rounded-full border border-violet-500/30">
-              <span className="w-5 h-5 rounded-full bg-violet-600 text-white flex items-center justify-center text-[10px]">2</span>
-              <span>2. Choose Plan</span>
-            </span>
-            <span className="text-slate-600">→</span>
-            <span className="flex items-center gap-1.5 text-slate-500">
-              <span className="w-5 h-5 rounded-full bg-navy-800 text-slate-400 flex items-center justify-center text-[10px]">3</span>
-              <span>3. Demo Checkout</span>
-            </span>
-            <span className="text-slate-600">→</span>
-            <span className="flex items-center gap-1.5 text-slate-500">
-              <span className="w-5 h-5 rounded-full bg-navy-800 text-slate-400 flex items-center justify-center text-[10px]">4</span>
-              <span>4. Register PG</span>
-            </span>
-          </div>
-
-          {/* Illustrative GST Notice */}
-          <div className="p-3.5 rounded-2xl bg-navy-900/80 border border-navy-750 text-xs text-slate-300 max-w-xl mx-auto flex items-start gap-2.5 text-left">
-            <Info className="w-4 h-4 text-brand-400 shrink-0 mt-0.5" />
-            <p>
-              <strong>Transparent Tax Calculation:</strong> All plans display the base price plus an illustrative 18% GST (subject to confirmation prior to commercial launch).
+            <p className="text-sm sm:text-base text-slate-300 max-w-2xl mx-auto leading-relaxed">
+              Every eligible new PG owner receives a genuine 30-day free trial with Pro management capabilities. Zero payment method or credit card required. Countdown begins when you submit your first PG listing for review.
             </p>
+
+            {/* Stepper Dots */}
+            <div className="flex items-center justify-center gap-3 pt-2 text-xs font-semibold">
+              <span className="flex items-center gap-1.5 text-emerald-400">
+                <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-[10px]">✓</span>
+                <span>1. Account Created</span>
+              </span>
+              <span className="text-slate-600">→</span>
+              <span className="flex items-center gap-1.5 text-violet-300 bg-violet-500/10 px-3 py-1 rounded-full border border-violet-500/30">
+                <span className="w-5 h-5 rounded-full bg-violet-600 text-white flex items-center justify-center text-[10px]">2</span>
+                <span>2. 30-Day Free Trial</span>
+              </span>
+              <span className="text-slate-600">→</span>
+              <span className="flex items-center gap-1.5 text-slate-500">
+                <span className="w-5 h-5 rounded-full bg-navy-800 text-slate-400 flex items-center justify-center text-[10px]">3</span>
+                <span>3. Register First PG</span>
+              </span>
+              <span className="text-slate-600">→</span>
+              <span className="flex items-center gap-1.5 text-slate-500">
+                <span className="w-5 h-5 rounded-full bg-navy-800 text-slate-400 flex items-center justify-center text-[10px]">4</span>
+                <span>4. Owner Dashboard</span>
+              </span>
+            </div>
+
+            {/* 30-Day Free Trial Highlight Card */}
+            <div className="p-6 rounded-3xl bg-gradient-to-r from-violet-950/60 via-navy-900 to-navy-900 border border-violet-500/40 text-left space-y-4 shadow-xl mt-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-extrabold uppercase tracking-wider text-violet-300 bg-violet-500/20 px-2.5 py-0.5 rounded-full border border-violet-500/30">
+                      Recommended
+                    </span>
+                    <span className="text-xs font-bold text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded-full border border-emerald-500/20">
+                      No Credit Card Required
+                    </span>
+                  </div>
+                  <h2 className="text-xl sm:text-2xl font-black text-white mt-1.5">
+                    Start your 30-day free trial (Pro Plan Access)
+                  </h2>
+                  <p className="text-xs text-slate-300 mt-1">
+                    Manage up to 3 PG properties, room &amp; bed vacancies, photo uploads, and student enquiries.
+                  </p>
+                </div>
+                <div className="shrink-0">
+                  <Button
+                    variant="glow"
+                    size="lg"
+                    onClick={() => navigate('/owner/listings/new')}
+                    className="font-bold shadow-lg shadow-violet-500/25"
+                  >
+                    Activate Free Trial &amp; Register PG →
+                  </Button>
+                </div>
+              </div>
+
+              <div className="pt-3 border-t border-navy-800 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs text-slate-400">
+                <div>
+                  <strong className="text-white block text-[11px]">Countdown Start:</strong>
+                  <span>Begins when first PG listing is submitted for review</span>
+                </div>
+                <div>
+                  <strong className="text-white block text-[11px]">Trial Expiry:</strong>
+                  <span>Automatic transition to free Basic plan (no auto charges)</span>
+                </div>
+                <div>
+                  <strong className="text-white block text-[11px]">Data Guarantee:</strong>
+                  <span>Properties and enquiries are never deleted</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Illustrative GST Notice */}
+            <div className="p-3.5 rounded-2xl bg-navy-900/80 border border-navy-750 text-xs text-slate-300 max-w-xl mx-auto flex items-start gap-2.5 text-left">
+              <Info className="w-4 h-4 text-brand-400 shrink-0 mt-0.5" />
+              <p>
+                <strong>Or Choose a Direct Paid Tier:</strong> If you already manage a larger portfolio and wish to subscribe immediately, select a plan below. All prices clearly itemize illustrative 18% GST.
+              </p>
+            </div>
           </div>
-        </div>
 
         {/* 3 Pricing Cards Grid */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-stretch max-w-6xl mx-auto">

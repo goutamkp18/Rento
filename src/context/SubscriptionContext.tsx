@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { OwnerSubscription, SubscriptionPlan, SubscriptionPlanId, SubscriptionStatus } from '../types';
+import { OwnerSubscription, SubscriptionPlan, SubscriptionPlanId, SubscriptionStatus, TrialInfo } from '../types';
 import { subscriptionService } from '../services/subscriptionService';
 import { listingsService } from '../services/listingsService';
 import { getSubscriptionPlan } from '../utils/pricing';
@@ -18,6 +18,14 @@ interface SubscriptionContextType {
   listingLimit: number;
   remainingCapacity: number;
   capacityReason?: string;
+  // 30-Day Free Trial extensions
+  trialInfo: TrialInfo;
+  isTrialActive: boolean;
+  isTrialEligible: boolean;
+  isTrialExpired: boolean;
+  activeListingId?: string;
+  startTrialOnFirstListing: () => Promise<OwnerSubscription>;
+  setActiveListingForBasic: (listingId: string) => Promise<void>;
   selectPlan: (planId: SubscriptionPlanId) => void;
   simulatePayment: (isSuccess: boolean) => Promise<boolean>;
   upgradePlan: (planId: SubscriptionPlanId) => Promise<void>;
@@ -69,6 +77,41 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
     subscriptionService.saveSelectedPlan(planId);
   };
 
+  /**
+   * Starts trial countdown when the owner submits their first valid PG listing for review.
+   */
+  const startTrialOnFirstListing = async (): Promise<OwnerSubscription> => {
+    if (!user) throw new Error('Not authenticated');
+    const started = await subscriptionService.startTrialOnFirstListing(user.id);
+    setSubscription(started);
+    return started;
+  };
+
+  /**
+   * Sets the primary active listing under the free Basic plan upon trial expiration.
+   */
+  const setActiveListingForBasic = async (listingId: string) => {
+    if (!user) return;
+    setIsLoading(true);
+    try {
+      const updated = await subscriptionService.setActiveListingForBasicPlan(user.id, listingId);
+      setSubscription(updated);
+      showToast({
+        type: 'success',
+        title: 'Active Property Updated',
+        message: 'Your designated property is now the active listing under the free Basic plan.',
+      });
+    } catch (e: any) {
+      showToast({
+        type: 'error',
+        title: 'Action Failed',
+        message: e?.message || 'Could not update active listing.',
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const simulatePayment = async (isSuccess: boolean): Promise<boolean> => {
     if (!user) return false;
 
@@ -83,8 +126,8 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
         setSubscription(activeSub);
         showToast({
           type: 'success',
-          title: 'Demo Payment Successful',
-          message: `Your ${getSubscriptionPlan(selectedPlanId).name} subscription is now active in demo mode.`,
+          title: 'Plan Activated',
+          message: `Your ${getSubscriptionPlan(selectedPlanId).name} subscription is now active.`,
           isMockPersisted: true,
         });
         return true;
@@ -140,7 +183,7 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
       showToast({
         type: 'info',
         title: 'Subscription Cancelled',
-        message: 'Your subscription status is updated to cancelled in this demo.',
+        message: 'Your subscription status is updated to cancelled.',
         isMockPersisted: true,
       });
     } finally {
@@ -148,21 +191,55 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
   };
 
-  // Derived properties
-  const hasActiveSubscription = subscription !== null && subscription.status === 'active';
-  const currentPlan = subscription ? getSubscriptionPlan(subscription.plan_id) : null;
+  // Derived Trial state
+  const trialInfo = subscriptionService.getTrialInfo(subscription);
+  const isTrialActive = trialInfo.isActive;
+  const isTrialEligible = trialInfo.isEligible;
+  const isTrialExpired = trialInfo.isExpired;
+
+  // An owner has active access if they have a paid plan OR an active/eligible trial
+  const hasActiveSubscription =
+    subscription !== null &&
+    (subscription.status === 'active' ||
+      subscription.status === 'trialing' ||
+      subscription.status === 'trial_eligible' ||
+      isTrialActive ||
+      isTrialEligible);
+
+  const currentPlan = subscription
+    ? isTrialActive || isTrialEligible
+      ? getSubscriptionPlan(trialInfo.trialPlanId)
+      : isTrialExpired
+      ? getSubscriptionPlan('basic')
+      : getSubscriptionPlan(subscription.plan_id)
+    : null;
+
   const selectedPlan = getSubscriptionPlan(selectedPlanId);
 
-  const listingLimit = currentPlan ? currentPlan.listingLimit : 0;
+  // Listing limits
+  const listingLimit = isTrialActive || isTrialEligible
+    ? trialInfo.trialListingLimit
+    : isTrialExpired
+    ? 1
+    : currentPlan
+    ? currentPlan.listingLimit
+    : 0;
+
   const remainingCapacity =
     listingLimit === Infinity ? Infinity : Math.max(0, listingLimit - listingCount);
   const canAddListing = hasActiveSubscription && (listingLimit === Infinity || listingCount < listingLimit);
 
   let capacityReason: string | undefined = undefined;
-  if (!hasActiveSubscription) {
-    capacityReason = 'An active subscription is required before you can list a PG.';
+  if (isTrialExpired) {
+    if (listingCount > 1) {
+      capacityReason = `Your 30-day free trial has expired. The free Basic plan permits 1 active listing (${listingCount} properties saved). Select which property remains active or upgrade to Pro.`;
+    } else {
+      capacityReason = 'The free Basic plan allows 1 active listing. Upgrade to Pro to list additional accommodations.';
+    }
+  } else if (!hasActiveSubscription) {
+    capacityReason = 'An active subscription or 30-day free trial is required before you can list a PG.';
   } else if (!canAddListing) {
-    capacityReason = `You have reached your listing limit (${listingLimit} PG${listingLimit > 1 ? 's' : ''}) on the ${currentPlan?.name} plan. Please upgrade to add more properties.`;
+    capacityReason = `You have reached your listing limit (${listingLimit} PG${listingLimit > 1 ? 's' : ''}) on the ${currentPlan?.name || 'Trial'} plan. Please upgrade to add more properties.`;
   }
 
   return (
@@ -179,6 +256,13 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
         listingLimit,
         remainingCapacity,
         capacityReason,
+        trialInfo,
+        isTrialActive,
+        isTrialEligible,
+        isTrialExpired,
+        activeListingId: subscription?.active_listing_id,
+        startTrialOnFirstListing,
+        setActiveListingForBasic,
         selectPlan,
         simulatePayment,
         upgradePlan,

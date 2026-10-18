@@ -33,7 +33,14 @@ export const OwnerListingsPage: React.FC = () => {
     canAddListing,
     listingLimit,
     remainingCapacity,
-    capacityReason
+    capacityReason,
+    trialInfo,
+    isTrialActive,
+    isTrialEligible,
+    isTrialExpired,
+    activeListingId,
+    startTrialOnFirstListing,
+    setActiveListingForBasic,
   } = useSubscription();
   const { showToast } = useToast();
   const [listings, setListings] = useState<PGListing[]>([]);
@@ -70,6 +77,12 @@ export const OwnerListingsPage: React.FC = () => {
 
   const handleSubmitForReview = async (listing: PGListing) => {
     await listingsService.updateListingStatus(listing.id, 'under_review');
+    // Start trial countdown if first review submission
+    try {
+      await startTrialOnFirstListing();
+    } catch (e) {
+      console.warn('Could not trigger trial start:', e);
+    }
     setListings(prev =>
       prev.map(l => (l.id === listing.id ? { ...l, publication_status: 'under_review' } : l))
     );
@@ -77,7 +90,7 @@ export const OwnerListingsPage: React.FC = () => {
     showToast({
       type: 'success',
       title: 'Submitted for Admin Review',
-      message: `${listing.name} sent to Rento operations for verification.`,
+      message: `${listing.name} sent to Rento operations for verification. 30-Day Free Trial countdown active.`,
       isMockPersisted: true,
     });
   };
@@ -166,11 +179,31 @@ export const OwnerListingsPage: React.FC = () => {
             <CreditCard className="w-4 h-4 text-violet-400" />
             <span className="text-slate-400">Current Plan:</span>
             <span className="font-bold text-white">
-              {currentPlan ? currentPlan.name : 'No Active Plan'}
+              {isTrialActive
+                ? '30-Day Free Trial (Pro Tier)'
+                : isTrialEligible
+                ? '30-Day Free Trial (Ready to Start)'
+                : isTrialExpired
+                ? 'Free Basic Plan'
+                : currentPlan
+                ? currentPlan.name
+                : 'No Active Plan'}
             </span>
-            {hasActiveSubscription ? (
+            {isTrialActive ? (
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-500/15 text-violet-300 border border-violet-500/30">
+                Trial: {trialInfo.daysRemaining} {trialInfo.daysRemaining === 1 ? 'day' : 'days'} left
+              </span>
+            ) : isTrialEligible ? (
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                Trial Eligible
+              </span>
+            ) : isTrialExpired ? (
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                Trial Expired (Basic Plan)
+              </span>
+            ) : hasActiveSubscription ? (
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                Active Demo
+                Active Plan
               </span>
             ) : (
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-500/10 text-red-400 border border-red-500/20">
@@ -213,12 +246,56 @@ export const OwnerListingsPage: React.FC = () => {
           />
         </div>
 
-        {!canAddListing && (
+        {/* Expired Trial Notification & Listing Selection */}
+        {isTrialExpired && listings.length > 1 && (
+          <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-200 space-y-2">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-bold text-white text-xs">
+                    Trial Expired: Select Your Active Basic Listing
+                  </p>
+                  <p className="text-[11px] text-slate-300 mt-0.5">
+                    Your 30-day free trial has expired. You have been switched to the free Basic plan (1 PG limit). You have {listings.length} saved properties. Choose which listing remains active, or upgrade to Pro to keep all properties active without interruption. <strong>No listings or enquiries are ever deleted.</strong>
+                  </p>
+                </div>
+              </div>
+              <Link to="/owner/subscription" className="shrink-0">
+                <Button variant="glow" size="sm" className="text-xs">
+                  Upgrade to Pro
+                </Button>
+              </Link>
+            </div>
+
+            <div className="pt-2 border-t border-amber-500/20 flex flex-wrap gap-2 items-center">
+              <span className="text-[11px] text-slate-300 font-semibold">Active Listing:</span>
+              {listings.map(l => {
+                const isActiveListing = activeListingId ? activeListingId === l.id : listings[0].id === l.id;
+                return (
+                  <button
+                    key={l.id}
+                    onClick={() => setActiveListingForBasic(l.id)}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-medium border transition-all ${
+                      isActiveListing
+                        ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300'
+                        : 'bg-navy-950 border-navy-800 text-slate-400 hover:text-white hover:border-slate-600'
+                    }`}
+                  >
+                    {isActiveListing ? '✓ ' : ''}{l.name}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {!canAddListing && !isTrialExpired && (
           <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300 flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0" />
               <span>
-                You have reached your listing limit ({listingLimit} PG{listingLimit > 1 ? 's' : ''}). Upgrade to Pro Plus to add more properties.
+                {capacityReason || `Listing limit reached (${listingLimit} PGs). Upgrade to add more properties.`}
               </span>
             </div>
             <Link to="/owner/subscription" className="shrink-0 font-bold underline hover:text-white text-[11px]">
