@@ -8,6 +8,8 @@ export interface AdminAuditLog {
   action:
     | 'approve_publication'
     | 'reject_publication'
+    | 'approve_revision'
+    | 'reject_revision'
     | 'verify_property'
     | 'audit_in_progress'
     | 'reset_unverified'

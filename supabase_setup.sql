@@ -104,6 +104,8 @@ CREATE TABLE IF NOT EXISTS public.pg_listings (
 -- Ensure rejection_reason and google_maps_url columns exist on existing tables
 ALTER TABLE public.pg_listings ADD COLUMN IF NOT EXISTS rejection_reason TEXT;
 ALTER TABLE public.pg_listings ADD COLUMN IF NOT EXISTS google_maps_url TEXT;
+ALTER TABLE public.pg_listings ADD COLUMN IF NOT EXISTS business_name TEXT;
+ALTER TABLE public.pg_listings ADD COLUMN IF NOT EXISTS owner_type TEXT DEFAULT 'individual';
 
 
 -- ==============================================================================
@@ -521,6 +523,57 @@ DROP POLICY IF EXISTS "Anyone can insert/update student subscriptions" ON public
 CREATE POLICY "Anyone can insert/update student subscriptions" ON public.student_subscriptions
   FOR ALL USING (true);
 
+-- ==============================================================================
+-- 11. LISTING REVISIONS TABLE (PG Owner Edits & Admin Verification Workflow)
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS public.listing_revisions (
+  id TEXT PRIMARY KEY,
+  listing_id TEXT NOT NULL REFERENCES public.pg_listings(id) ON DELETE CASCADE,
+  owner_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'pending_review' 
+    CHECK (status IN ('draft', 'pending_review', 'under_review', 'approved', 'rejected')),
+  proposed_changes JSONB NOT NULL,
+  submission_date TIMESTAMPTZ DEFAULT NOW(),
+  reviewed_at TIMESTAMPTZ,
+  reviewed_by UUID REFERENCES public.profiles(id),
+  rejection_reason TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
 
+ALTER TABLE public.pg_listings ADD COLUMN IF NOT EXISTS has_pending_revision BOOLEAN DEFAULT false;
+ALTER TABLE public.pg_listings ADD COLUMN IF NOT EXISTS pending_revision_id TEXT;
 
+CREATE INDEX IF NOT EXISTS idx_listing_revisions_listing_id ON public.listing_revisions(listing_id);
+CREATE INDEX IF NOT EXISTS idx_listing_revisions_owner_id ON public.listing_revisions(owner_id);
+CREATE INDEX IF NOT EXISTS idx_listing_revisions_status ON public.listing_revisions(status);
 
+ALTER TABLE public.listing_revisions ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Allow select listing revisions" ON public.listing_revisions;
+CREATE POLICY "Allow select listing revisions" ON public.listing_revisions 
+  FOR SELECT USING (
+    auth.uid() = owner_id 
+    OR EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin')
+  );
+
+DROP POLICY IF EXISTS "Allow insert listing revisions" ON public.listing_revisions;
+CREATE POLICY "Allow insert listing revisions" ON public.listing_revisions 
+  FOR INSERT WITH CHECK (
+    auth.uid() = owner_id 
+    OR EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin')
+  );
+
+DROP POLICY IF EXISTS "Allow update listing revisions" ON public.listing_revisions;
+CREATE POLICY "Allow update listing revisions" ON public.listing_revisions 
+  FOR UPDATE USING (
+    auth.uid() = owner_id 
+    OR EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin')
+  );
+
+DROP POLICY IF EXISTS "Allow delete listing revisions" ON public.listing_revisions;
+CREATE POLICY "Allow delete listing revisions" ON public.listing_revisions 
+  FOR DELETE USING (
+    auth.uid() = owner_id 
+    OR EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin')
+  );

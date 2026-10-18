@@ -14,23 +14,26 @@ import {
 } from 'lucide-react';
 import { listingsService } from '../../services/listingsService';
 import { auditService, AdminAuditLog } from '../../services/auditService';
-import { PGListing } from '../../types';
+import { PGListing, ListingRevision } from '../../types';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
 
 export const AdminDashboardPage: React.FC = () => {
   const [listings, setListings] = useState<PGListing[]>([]);
+  const [revisions, setRevisions] = useState<(ListingRevision & { listing?: PGListing })[]>([]);
   const [auditLogs, setAuditLogs] = useState<AdminAuditLog[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const loadDashboardData = async () => {
       try {
-        const [allListings, logs] = await Promise.all([
+        const [allListings, allRevisions, logs] = await Promise.all([
           listingsService.getAllListingsForAdmin(),
+          listingsService.getAllPendingRevisionsForAdmin(),
           auditService.getLogs(),
         ]);
         setListings(allListings);
+        setRevisions(allRevisions);
         setAuditLogs(logs);
       } catch (e) {
         console.error('Failed to load dashboard data', e);
@@ -45,6 +48,7 @@ export const AdminDashboardPage: React.FC = () => {
   const pendingListings = listings.filter(
     l => l.publication_status === 'pending_review' || l.publication_status === 'under_review'
   );
+  const totalAwaitingReview = pendingListings.length + revisions.length;
   const publishedListings = listings.filter(l => l.publication_status === 'published');
   const verifiedListings = listings.filter(l => l.verification_status === 'verified');
 
@@ -70,7 +74,7 @@ export const AdminDashboardPage: React.FC = () => {
           <div className="flex items-center gap-3 shrink-0">
             <Link to="/admin/listings">
               <Button variant="primary" size="md" leftIcon={<Building2 className="w-4 h-4" />}>
-                Open Review Queue ({pendingListings.length})
+                Open Review Queue ({totalAwaitingReview})
               </Button>
             </Link>
           </div>
@@ -96,8 +100,10 @@ export const AdminDashboardPage: React.FC = () => {
                 <Clock className="w-4 h-4" />
               </div>
             </div>
-            <p className="text-2xl font-black text-white mt-2">{pendingListings.length}</p>
-            <p className="text-[11px] text-amber-400 font-medium mt-1">Require moderation decision</p>
+            <p className="text-2xl font-black text-white mt-2">{totalAwaitingReview}</p>
+            <p className="text-[11px] text-amber-400 font-medium mt-1">
+              {revisions.length} edits pending • {pendingListings.length} new listings
+            </p>
           </div>
 
           <div className="p-5 rounded-2xl bg-navy-900/90 border border-navy-800 shadow-lg">
@@ -134,27 +140,60 @@ export const AdminDashboardPage: React.FC = () => {
                 <h3 className="text-sm font-bold text-white">Pending Moderation Queue</h3>
               </div>
               <Link to="/admin/listings" className="text-xs text-brand-400 hover:text-brand-300 font-semibold">
-                View All →
+                View All ({totalAwaitingReview}) →
               </Link>
             </div>
 
             {isLoading ? (
               <div className="p-6 text-center text-xs text-slate-400">Loading queue...</div>
-            ) : pendingListings.length === 0 ? (
+            ) : totalAwaitingReview === 0 ? (
               <div className="p-8 text-center text-xs text-slate-400 space-y-2 border border-dashed border-navy-800 rounded-2xl">
                 <CheckCircle2 className="w-7 h-7 text-emerald-400 mx-auto" />
                 <p className="text-slate-300 font-semibold">Queue is clear</p>
-                <p>No listings currently awaiting publication approval.</p>
+                <p>No listings or revisions currently awaiting review.</p>
               </div>
             ) : (
               <div className="space-y-3">
-                {pendingListings.slice(0, 4).map(item => (
+                {/* Pending Revisions first */}
+                {revisions.slice(0, 3).map(rev => (
+                  <div
+                    key={rev.id}
+                    className="p-3.5 rounded-2xl bg-violet-950/30 border border-violet-500/30 flex items-center justify-between gap-3"
+                  >
+                    <div>
+                      <div className="flex items-center gap-1.5 mb-0.5">
+                        <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-violet-500/20 text-violet-300 border border-violet-500/30">
+                          Property Edit
+                        </span>
+                        <h4 className="font-bold text-white text-xs line-clamp-1">
+                          {rev.proposed_changes.name || rev.listing?.name || 'Property'}
+                        </h4>
+                      </div>
+                      <p className="text-[11px] text-slate-400">
+                        By {rev.proposed_changes.owner_name || rev.listing?.owner_name} • {new Date(rev.submission_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                      </p>
+                    </div>
+                    <Link to="/admin/listings">
+                      <Button variant="glow" size="sm" className="text-xs shrink-0">
+                        Review Diff
+                      </Button>
+                    </Link>
+                  </div>
+                ))}
+
+                {/* Pending New Listings */}
+                {pendingListings.slice(0, 3).map(item => (
                   <div
                     key={item.id}
                     className="p-3.5 rounded-2xl bg-navy-950/70 border border-navy-800 flex items-center justify-between gap-3"
                   >
                     <div>
-                      <h4 className="font-bold text-white text-xs line-clamp-1">{item.name}</h4>
+                      <div className="flex items-center gap-1.5 mb-0.5">
+                        <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                          New Listing
+                        </span>
+                        <h4 className="font-bold text-white text-xs line-clamp-1">{item.name}</h4>
+                      </div>
                       <p className="text-[11px] text-slate-400">
                         {item.locality}, {item.city} • By {item.owner_name}
                       </p>

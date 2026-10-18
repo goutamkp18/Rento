@@ -126,6 +126,25 @@ export interface PGListing {
   images: ListingImage[];
   documents?: OwnerDocument[];
   featured?: boolean;
+  has_pending_revision?: boolean;
+  pending_revision_id?: string;
+  pending_revision?: ListingRevision;
+}
+
+export type RevisionStatus = 'draft' | 'pending_review' | 'under_review' | 'approved' | 'rejected';
+
+export interface ListingRevision {
+  id: string;
+  listing_id: string;
+  owner_id: string;
+  status: RevisionStatus;
+  proposed_changes: Partial<PGListing>;
+  submission_date: string;
+  reviewed_at?: string;
+  reviewed_by?: string;
+  rejection_reason?: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export type EnquiryType = 'general' | 'visit_request' | 'booking_inquiry';

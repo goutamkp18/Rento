@@ -23,6 +23,8 @@ interface AuthContextType {
     owner_type?: 'individual' | 'property_manager';
     business_name?: string;
   }) => Promise<UserProfile>;
+  sendEmailOtp: (email: string) => Promise<{ success: boolean; message: string }>;
+  verifyEmailOtp: (email: string, token: string, requestedRole?: UserRole) => Promise<UserProfile>;
   updateProfile: (updates: Partial<UserProfile>) => Promise<UserProfile>;
   verifyAdminPrivileges: () => Promise<boolean>;
   logout: () => Promise<void>;
@@ -65,6 +67,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             created_at: profile.created_at || authUser.created_at || new Date().toISOString(),
           } as UserProfile;
         }
+
+        // Fallback for immediate sign-in before profile row is fetched or for newly created OTP users
+        const stored = authService.getCurrentUser();
+        if (stored && stored.id === authUser.id) {
+          return stored;
+        }
+
+        return {
+          id: authUser.id,
+          email: authUser.email || '',
+          full_name: authUser.email?.split('@')[0] || 'User',
+          role: 'student',
+          created_at: authUser.created_at || new Date().toISOString(),
+        } as UserProfile;
       } catch (e) {
         console.warn('Profile load notice:', e);
       }
@@ -177,7 +193,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } finally {
       setIsLoading(false);
     }
+  };
 
+  const sendEmailOtp = async (email: string): Promise<{ success: boolean; message: string }> => {
+    setIsLoading(true);
+    try {
+      const res = await authService.sendEmailOtp(email);
+      showToast({
+        type: 'success',
+        title: 'Verification Code Dispatched',
+        message: res.message,
+      });
+      return res;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const verifyEmailOtp = async (
+    email: string,
+    token: string,
+    requestedRole?: UserRole
+  ): Promise<UserProfile> => {
+    setIsLoading(true);
+    try {
+      const profile = await authService.verifyEmailOtp(email, token, requestedRole);
+      setUser(profile);
+      showToast({
+        type: 'success',
+        title: `Welcome, ${profile.full_name}!`,
+        message: `Successfully verified as ${profile.role.toUpperCase()}`,
+      });
+      return profile;
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const updateProfile = async (updates: Partial<UserProfile>): Promise<UserProfile> => {
@@ -207,6 +257,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setIntendedDestination,
         login,
         signup,
+        sendEmailOtp,
+        verifyEmailOtp,
         updateProfile,
         verifyAdminPrivileges,
         logout,

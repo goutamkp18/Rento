@@ -97,6 +97,7 @@ export function App() {
                     </Route>
 
                     {/* Public Authentication Routes */}
+                    <Route path="/auth" element={<LoginPage />} />
                     <Route path="/login" element={<LoginPage />} />
                     <Route path="/signup" element={<SignupPage />} />
                     <Route path="/forgot-password" element={<ForgotPasswordPage />} />

@@ -1,8 +1,28 @@
-import { PGListing, FilterState, ListingPublicationStatus, ListingVerificationStatus } from '../types';
+import { PGListing, FilterState, ListingPublicationStatus, ListingVerificationStatus, ListingRevision, RevisionStatus } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { authService } from './authService';
 import { subscriptionService } from './subscriptionService';
 import { storageService } from './storageService';
+import { auditService } from './auditService';
+
+const REVISIONS_STORAGE_KEY = 'rento_listing_revisions';
+
+function getLocalRevisions(): ListingRevision[] {
+  try {
+    const raw = localStorage.getItem(REVISIONS_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveLocalRevisions(revisions: ListingRevision[]): void {
+  try {
+    localStorage.setItem(REVISIONS_STORAGE_KEY, JSON.stringify(revisions));
+  } catch (e) {
+    console.error('Failed to save local revisions:', e);
+  }
+}
 
 export function mapListingFromDb(raw: any): PGListing {
   const images =
@@ -139,7 +159,20 @@ export const listingsService = {
       console.error('Supabase getListingById error:', error);
       throw new Error(error.message);
     }
-    return data ? mapListingFromDb(data) : null;
+
+    if (!data) return null;
+
+    const listing = mapListingFromDb(data);
+    try {
+      const rev = await this.getListingRevision(id);
+      if (rev) {
+        listing.has_pending_revision = rev.status === 'pending_review' || rev.status === 'under_review';
+        listing.pending_revision_id = rev.id;
+        listing.pending_revision = rev;
+      }
+    } catch {}
+
+    return listing;
   },
 
   async getFeaturedListings(): Promise<PGListing[]> {
@@ -162,7 +195,25 @@ export const listingsService = {
       console.error('Supabase getOwnerListings error:', error);
       throw new Error(error.message);
     }
-    return (data || []).map(mapListingFromDb);
+    const listings = (data || []).map(mapListingFromDb);
+
+    try {
+      const revisions = await this.getOwnerRevisions(ownerId);
+      for (const listing of listings) {
+        const activeRev = revisions.find(
+          r => r.listing_id === listing.id && (r.status === 'pending_review' || r.status === 'under_review' || r.status === 'draft' || r.status === 'rejected')
+        );
+        if (activeRev) {
+          listing.has_pending_revision = activeRev.status === 'pending_review' || activeRev.status === 'under_review';
+          listing.pending_revision_id = activeRev.id;
+          listing.pending_revision = activeRev;
+        }
+      }
+    } catch {
+      // Non-fatal enhancement
+    }
+
+    return listings;
   },
 
 
@@ -438,69 +489,106 @@ export const listingsService = {
       }
     }
 
-    const sanitizedUpdates = { ...updates };
+    const sanitizedUpdates: any = { ...updates };
     const imagesToUpdate = sanitizedUpdates.images;
-    delete (sanitizedUpdates as any).rooms;
-    delete (sanitizedUpdates as any).images;
-    delete (sanitizedUpdates as any).documents;
-    delete (sanitizedUpdates as any).listing_images;
 
-    let { data, error } = await supabase
-      .from('pg_listings')
-      .update({
-        ...sanitizedUpdates,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', id)
-      .select('*, rooms(*), listing_images(*)')
-      .single();
-
-    // If rejection_reason column does not exist on pg_listings, fall back to verification_notes
-    if (error && error.message?.includes('rejection_reason')) {
-      const reason = sanitizedUpdates.rejection_reason;
-      delete sanitizedUpdates.rejection_reason;
-      if (reason) {
-        sanitizedUpdates.verification_notes = reason;
+    // Synchronize business_name and owner_type to profiles table if present
+    if (isSupabaseConfigured && supabase && existing.owner_id && (sanitizedUpdates.business_name || sanitizedUpdates.owner_type)) {
+      try {
+        const profUpdates: any = {};
+        if (sanitizedUpdates.business_name !== undefined) profUpdates.business_name = sanitizedUpdates.business_name;
+        if (sanitizedUpdates.owner_type !== undefined) profUpdates.owner_type = sanitizedUpdates.owner_type;
+        await supabase.from('profiles').update(profUpdates).eq('id', existing.owner_id);
+      } catch (profErr) {
+        console.warn('Profile business_name sync notice:', profErr);
       }
-
-      const retryRes = await supabase
-        .from('pg_listings')
-        .update({
-          ...sanitizedUpdates,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', id)
-        .select('*, rooms(*), listing_images(*)')
-        .single();
-
-      data = retryRes.data;
-      error = retryRes.error;
     }
 
-    if (error && error.message?.includes('google_maps_url')) {
-      delete (sanitizedUpdates as any).google_maps_url;
-      const retryRes = await supabase
+    // Strip non-table or joined properties from the pg_listings update payload
+    delete sanitizedUpdates.rooms;
+    delete sanitizedUpdates.images;
+    delete sanitizedUpdates.documents;
+    delete sanitizedUpdates.listing_images;
+    delete sanitizedUpdates.pending_revision;
+    delete sanitizedUpdates.business_name;
+    delete sanitizedUpdates.owner_type;
+    delete sanitizedUpdates.reviews_count;
+
+    if (sanitizedUpdates.featured !== undefined && sanitizedUpdates.is_featured === undefined) {
+      sanitizedUpdates.is_featured = sanitizedUpdates.featured;
+    }
+    delete sanitizedUpdates.featured;
+
+    let payload: any = {
+      ...sanitizedUpdates,
+      updated_at: new Date().toISOString(),
+    };
+
+    let data: any = null;
+    let error: any = null;
+
+    // Resilient update loop: automatically strips any missing schema cache columns reported by Supabase
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const res = await supabase
         .from('pg_listings')
-        .update({
-          ...sanitizedUpdates,
-          updated_at: new Date().toISOString(),
-        })
+        .update(payload)
         .eq('id', id)
         .select('*, rooms(*), listing_images(*)')
-        .single();
+        .maybeSingle();
 
-      data = retryRes.data;
-      error = retryRes.error;
+      data = res.data;
+      error = res.error;
+
+      if (!error) break;
+
+      // Check if error is due to missing column in Supabase schema cache
+      const missingColMatch =
+        error.message?.match(/Could not find the '([^']+)' column of 'pg_listings'/i) ||
+        error.message?.match(/column "([^"]+)" of relation "pg_listings" does not exist/i) ||
+        error.message?.match(/column pg_listings\.([^ ]+) does not exist/i);
+
+      if (missingColMatch && missingColMatch[1]) {
+        const missingCol = missingColMatch[1];
+        console.warn(`[Auto-Recovery] Removing missing column '${missingCol}' from pg_listings payload and retrying update.`);
+        delete payload[missingCol];
+        continue;
+      }
+
+      if (error.message?.includes('has_pending_revision') || error.message?.includes('pending_revision_id')) {
+        delete payload.has_pending_revision;
+        delete payload.pending_revision_id;
+        continue;
+      }
+
+      if (error.message?.includes('rejection_reason')) {
+        const reason = payload.rejection_reason;
+        delete payload.rejection_reason;
+        if (reason) payload.verification_notes = reason;
+        continue;
+      }
+
+      if (error.message?.includes('google_maps_url')) {
+        delete payload.google_maps_url;
+        continue;
+      }
+
+      break;
     }
 
     if (error) {
-      console.error('Supabase updateListing error:', error);
+      console.error('Supabase updateListing error after recovery attempts:', error);
       throw new Error(`Failed to update listing: ${error.message}`);
     }
 
-
     if (imagesToUpdate && Array.isArray(imagesToUpdate)) {
       await this.saveListingImages(id, imagesToUpdate);
+    }
+
+    if (!data) {
+      return {
+        ...existing,
+        ...updates,
+      } as PGListing;
     }
 
     return mapListingFromDb(data);
@@ -627,5 +715,527 @@ export const listingsService = {
     }
 
     return true;
+  },
+
+  /**
+   * Get any active pending or draft revision for a specific listing
+   */
+  async getListingRevision(listingId: string): Promise<ListingRevision | null> {
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('listing_revisions')
+          .select('*')
+          .eq('listing_id', listingId)
+          .order('submission_date', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (!error && data) {
+          return data as ListingRevision;
+        }
+      } catch (e) {
+        console.warn('Supabase getListingRevision notice:', e);
+      }
+    }
+
+    const locals = getLocalRevisions();
+    return locals.find(r => r.listing_id === listingId) || null;
+  },
+
+  /**
+   * Get all revisions submitted by a specific property owner
+   */
+  async getOwnerRevisions(ownerId: string): Promise<ListingRevision[]> {
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('listing_revisions')
+          .select('*')
+          .eq('owner_id', ownerId)
+          .order('submission_date', { ascending: false });
+
+        if (!error && data) {
+          return data as ListingRevision[];
+        }
+      } catch (e) {
+        console.warn('Supabase getOwnerRevisions notice:', e);
+      }
+    }
+
+    return getLocalRevisions().filter(r => r.owner_id === ownerId);
+  },
+
+  /**
+   * Admin: Get all pending property revisions awaiting review with current live details
+   */
+  async getAllPendingRevisionsForAdmin(): Promise<(ListingRevision & { listing?: PGListing })[]> {
+    const isAdmin = await authService.verifyAdminPrivileges();
+    if (!isAdmin) {
+      throw new Error('Unauthorized: Administrator privileges required to access listing revisions.');
+    }
+
+    let revisions: ListingRevision[] = [];
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('listing_revisions')
+          .select('*')
+          .in('status', ['pending_review', 'under_review'])
+          .order('submission_date', { ascending: false });
+
+        if (!error && data) {
+          revisions = data as ListingRevision[];
+        }
+      } catch (e) {
+        console.warn('Supabase getAllPendingRevisionsForAdmin notice:', e);
+      }
+    }
+
+    if (revisions.length === 0) {
+      revisions = getLocalRevisions().filter(r => r.status === 'pending_review' || r.status === 'under_review');
+    }
+
+    const results: (ListingRevision & { listing?: PGListing })[] = [];
+    for (const rev of revisions) {
+      try {
+        const currentListing = await this.getListingById(rev.listing_id);
+        results.push({ ...rev, listing: currentListing || undefined });
+      } catch {
+        results.push(rev);
+      }
+    }
+
+    return results;
+  },
+
+  /**
+   * Owner: Save unfinished edits as a draft without submitting to admin verification queue
+   */
+  async saveListingDraft(
+    listingId: string,
+    proposedChanges: Partial<PGListing>
+  ): Promise<{ listing: PGListing; revision?: ListingRevision }> {
+    const currentUser = authService.getCurrentUser();
+    if (!currentUser) {
+      throw new Error('Authentication required to save draft.');
+    }
+
+    const existing = await this.getListingById(listingId);
+    if (!existing) {
+      throw new Error(`Listing "${listingId}" not found in database.`);
+    }
+
+    const isAdmin = await authService.verifyAdminPrivileges(currentUser);
+    if (!isAdmin && existing.owner_id !== currentUser.id) {
+      throw new Error('Unauthorized: You can only edit your own property.');
+    }
+
+    // If listing is not yet published (e.g. draft, rejected), save directly to pg_listings
+    if (existing.publication_status !== 'published') {
+      const updated = await this.updateListing(listingId, {
+        ...proposedChanges,
+        publication_status: 'draft',
+      });
+      return { listing: updated };
+    }
+
+    // If listing IS published, do NOT touch public data; save proposed changes as a draft revision
+    const revisionId = `rev_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const nowTimestamp = new Date().toISOString();
+
+    const revision: ListingRevision = {
+      id: revisionId,
+      listing_id: listingId,
+      owner_id: existing.owner_id,
+      status: 'draft',
+      proposed_changes: proposedChanges,
+      submission_date: nowTimestamp,
+      created_at: nowTimestamp,
+      updated_at: nowTimestamp,
+    };
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase.from('listing_revisions').upsert([
+          {
+            id: revision.id,
+            listing_id: revision.listing_id,
+            owner_id: revision.owner_id,
+            status: revision.status,
+            proposed_changes: revision.proposed_changes,
+            submission_date: revision.submission_date,
+            created_at: revision.created_at,
+            updated_at: revision.updated_at,
+          }
+        ]);
+      } catch (err) {
+        console.warn('Supabase saveListingDraft notice:', err);
+      }
+    }
+
+    const locals = getLocalRevisions().filter(r => !(r.listing_id === listingId && r.status === 'draft'));
+    locals.unshift(revision);
+    saveLocalRevisions(locals);
+
+    return { listing: existing, revision };
+  },
+
+  /**
+   * Owner: Submit changes for admin verification.
+   * If published, keeps the current live approved version intact for students until admin approves!
+   */
+  async submitListingChangesForVerification(
+    listingId: string,
+    proposedChanges: Partial<PGListing>
+  ): Promise<{ listing: PGListing; revision?: ListingRevision }> {
+    const currentUser = authService.getCurrentUser();
+    if (!currentUser) {
+      throw new Error('Authentication required to submit changes for verification.');
+    }
+
+    const existing = await this.getListingById(listingId);
+    if (!existing) {
+      throw new Error(`Listing "${listingId}" not found in database.`);
+    }
+
+    const isAdmin = await authService.verifyAdminPrivileges(currentUser);
+    if (!isAdmin && existing.owner_id !== currentUser.id) {
+      throw new Error('Unauthorized: You can only edit your own property.');
+    }
+
+    // If not yet published, update listing directly to pending_review
+    if (existing.publication_status !== 'published') {
+      const updated = await this.updateListing(listingId, {
+        ...proposedChanges,
+        publication_status: 'pending_review',
+        verification_status: 'pending_verification',
+      });
+      return { listing: updated };
+    }
+
+    // If currently published, preserve published data for students and create a pending revision!
+    const revisionId = `rev_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const submissionTimestamp = new Date().toISOString();
+
+    const revision: ListingRevision = {
+      id: revisionId,
+      listing_id: listingId,
+      owner_id: existing.owner_id,
+      status: 'pending_review',
+      proposed_changes: proposedChanges,
+      submission_date: submissionTimestamp,
+      created_at: submissionTimestamp,
+      updated_at: submissionTimestamp,
+    };
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase.from('listing_revisions').insert([
+          {
+            id: revision.id,
+            listing_id: revision.listing_id,
+            owner_id: revision.owner_id,
+            status: revision.status,
+            proposed_changes: revision.proposed_changes,
+            submission_date: revision.submission_date,
+            created_at: revision.created_at,
+            updated_at: revision.updated_at,
+          }
+        ]);
+
+        // Flag has_pending_revision on pg_listings without altering publication_status!
+        await supabase
+          .from('pg_listings')
+          .update({
+            has_pending_revision: true,
+            pending_revision_id: revision.id,
+          })
+          .eq('id', listingId);
+      } catch (err) {
+        console.warn('Supabase submitListingChanges notice:', err);
+      }
+    }
+
+    const locals = getLocalRevisions().filter(r => !(r.listing_id === listingId && (r.status === 'draft' || r.status === 'pending_review')));
+    locals.unshift(revision);
+    saveLocalRevisions(locals);
+
+    const updatedListing: PGListing = {
+      ...existing,
+      has_pending_revision: true,
+      pending_revision_id: revision.id,
+      pending_revision: revision,
+    };
+
+    return { listing: updatedListing, revision };
+  },
+
+  /**
+   * Admin: Approve a pending property revision and atomically update live public listing
+   */
+  async approveRevision(revisionId: string, reviewerId?: string): Promise<PGListing> {
+    const isAdmin = await authService.verifyAdminPrivileges();
+    if (!isAdmin) {
+      throw new Error('Unauthorized: Administrator privileges required to approve revisions.');
+    }
+
+    let revision: ListingRevision | null = null;
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('listing_revisions')
+          .select('*')
+          .eq('id', revisionId)
+          .maybeSingle();
+        if (!error && data) revision = data as ListingRevision;
+      } catch (e) {
+        console.warn('Supabase query revision notice:', e);
+      }
+    }
+
+    if (!revision) {
+      const local = getLocalRevisions().find(r => r.id === revisionId);
+      if (local) revision = local;
+    }
+
+    if (!revision) {
+      throw new Error(`Revision "${revisionId}" not found.`);
+    }
+
+    const listingId = revision.listing_id;
+    const changes = revision.proposed_changes;
+    const currentAdmin = authService.getCurrentUser();
+    const effectiveReviewer = reviewerId || currentAdmin?.id || 'usr_admin_ops';
+    const approvalTimestamp = new Date().toISOString();
+
+    // 1. Try atomic RPC if available
+    let rpcSuccess = false;
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data: rpcData, error: rpcError } = await supabase.rpc('apply_approved_listing_revision', {
+          p_revision_id: revisionId,
+          p_admin_id: effectiveReviewer,
+        });
+        if (!rpcError && rpcData?.success) {
+          rpcSuccess = true;
+        }
+      } catch (rpcErr) {
+        console.warn('RPC apply_approved_listing_revision notice:', rpcErr);
+      }
+    }
+
+    // 2. If RPC not available, perform application update
+    if (!rpcSuccess) {
+      const payloadToUpdate: any = {
+        ...changes,
+        publication_status: 'published',
+        has_pending_revision: false,
+        pending_revision_id: null,
+        rejection_reason: null,
+        updated_at: approvalTimestamp,
+      };
+
+      delete payloadToUpdate.rooms;
+      delete payloadToUpdate.images;
+      delete payloadToUpdate.documents;
+      delete payloadToUpdate.listing_images;
+      delete payloadToUpdate.business_name;
+      delete payloadToUpdate.owner_type;
+      delete payloadToUpdate.pending_revision;
+
+      // Sync business_name and owner_type to the owner's profile
+      if (revision.owner_id && (changes.business_name || changes.owner_type)) {
+        if (isSupabaseConfigured && supabase) {
+          try {
+            const profUpdates: any = {};
+            if (changes.business_name !== undefined) profUpdates.business_name = changes.business_name;
+            if (changes.owner_type !== undefined) profUpdates.owner_type = changes.owner_type;
+            await supabase.from('profiles').update(profUpdates).eq('id', revision.owner_id);
+          } catch (pErr) {
+            console.warn('Profile business_name sync notice on approval:', pErr);
+          }
+        }
+      }
+
+      await this.updateListing(listingId, payloadToUpdate);
+
+      // Apply rooms if present in changes
+      if (changes.rooms && Array.isArray(changes.rooms) && changes.rooms.length > 0) {
+        if (isSupabaseConfigured && supabase) {
+          try {
+            await supabase.from('rooms').delete().eq('listing_id', listingId);
+            const roomsToInsert = changes.rooms.map(r => ({
+              id: r.id || `rm_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+              listing_id: listingId,
+              room_type: r.room_type,
+              room_name: r.room_name,
+              monthly_rent: r.rent_per_bed,
+              rent_per_bed: r.rent_per_bed,
+              deposit_amount: r.deposit_amount,
+              total_capacity: r.total_capacity,
+              available_beds: r.available_beds,
+              has_attached_washroom: r.has_attached_washroom,
+              is_air_conditioned: r.is_air_conditioned,
+              has_balcony: r.has_balcony,
+              room_amenities: r.room_amenities || [],
+            }));
+            await supabase.from('rooms').insert(roomsToInsert);
+          } catch (rErr) {
+            console.warn('Rooms update notice:', rErr);
+          }
+        }
+      }
+
+      // Apply images if present in changes
+      if (changes.images && Array.isArray(changes.images) && changes.images.length > 0) {
+        await this.saveListingImages(listingId, changes.images);
+      }
+
+      if (isSupabaseConfigured && supabase) {
+          try {
+            await supabase
+              .from('listing_revisions')
+              .update({
+                status: 'approved',
+                reviewed_at: approvalTimestamp,
+                reviewed_by: effectiveReviewer,
+                updated_at: approvalTimestamp,
+              })
+              .eq('id', revisionId);
+          } catch (revErr) {
+            console.warn('Update revision status notice:', revErr);
+          }
+
+          try {
+            await supabase
+              .from('pg_listings')
+              .update({ has_pending_revision: false, pending_revision_id: null, rejection_reason: null })
+              .eq('id', listingId);
+          } catch (pgFlagErr) {
+            console.warn('Pending revision flag update notice on pg_listings:', pgFlagErr);
+          }
+        }
+    }
+
+    // Update local storage
+    const locals = getLocalRevisions();
+    const index = locals.findIndex(r => r.id === revisionId);
+    if (index !== -1) {
+      locals[index] = {
+        ...locals[index],
+        status: 'approved',
+        reviewed_at: approvalTimestamp,
+        reviewed_by: effectiveReviewer,
+        updated_at: approvalTimestamp,
+      };
+      saveLocalRevisions(locals);
+    }
+
+    const updatedListing = await this.getListingById(listingId);
+
+    await auditService.logAction({
+      action: 'approve_revision',
+      listing_id: listingId,
+      listing_name: updatedListing?.name || changes.name || 'Property',
+      details: `Approved proposed revisions for "${updatedListing?.name}". Updated property details, room inventories, and photos are now live for students.`,
+    });
+
+    return updatedListing!;
+  },
+
+  /**
+   * Admin: Reject a proposed property revision with mandatory feedback for the owner
+   */
+  async rejectRevision(revisionId: string, rejectionReason: string, reviewerId?: string): Promise<ListingRevision> {
+    const isAdmin = await authService.verifyAdminPrivileges();
+    if (!isAdmin) {
+      throw new Error('Unauthorized: Administrator privileges required to reject revisions.');
+    }
+
+    if (!rejectionReason || !rejectionReason.trim()) {
+      throw new Error('Rejection reason is mandatory when declining proposed property changes.');
+    }
+
+    let revision: ListingRevision | null = null;
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('listing_revisions')
+          .select('*')
+          .eq('id', revisionId)
+          .maybeSingle();
+        if (!error && data) revision = data as ListingRevision;
+      } catch (e) {
+        console.warn('Supabase query revision notice:', e);
+      }
+    }
+
+    if (!revision) {
+      const local = getLocalRevisions().find(r => r.id === revisionId);
+      if (local) revision = local;
+    }
+
+    if (!revision) {
+      throw new Error(`Revision "${revisionId}" not found.`);
+    }
+
+    const currentAdmin = authService.getCurrentUser();
+    const effectiveReviewer = reviewerId || currentAdmin?.id || 'usr_admin_ops';
+    const rejectionTimestamp = new Date().toISOString();
+
+    const updatedRevision: ListingRevision = {
+      ...revision,
+      status: 'rejected',
+      rejection_reason: rejectionReason.trim(),
+      reviewed_at: rejectionTimestamp,
+      reviewed_by: effectiveReviewer,
+      updated_at: rejectionTimestamp,
+    };
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase
+          .from('listing_revisions')
+          .update({
+            status: 'rejected',
+            rejection_reason: rejectionReason.trim(),
+            reviewed_at: rejectionTimestamp,
+            reviewed_by: effectiveReviewer,
+            updated_at: rejectionTimestamp,
+          })
+          .eq('id', revisionId);
+
+        await supabase
+          .from('pg_listings')
+          .update({
+            has_pending_revision: false,
+            pending_revision_id: null,
+            rejection_reason: rejectionReason.trim(),
+          })
+          .eq('id', revision.listing_id);
+      } catch (err) {
+        console.warn('Supabase reject revision notice:', err);
+      }
+    }
+
+    const locals = getLocalRevisions();
+    const idx = locals.findIndex(r => r.id === revisionId);
+    if (idx !== -1) {
+      locals[idx] = updatedRevision;
+    } else {
+      locals.unshift(updatedRevision);
+    }
+    saveLocalRevisions(locals);
+
+    await auditService.logAction({
+      action: 'reject_revision',
+      listing_id: revision.listing_id,
+      listing_name: revision.proposed_changes.name || 'Property',
+      details: `Rejected proposed revisions. Reason: ${rejectionReason.trim()}`,
+      rejection_reason: rejectionReason.trim(),
+    });
+
+    return updatedRevision;
   }
 };

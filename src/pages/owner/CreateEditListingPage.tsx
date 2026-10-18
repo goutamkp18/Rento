@@ -30,12 +30,15 @@ import {
   Info,
   Compass,
   AlertCircle,
-  ExternalLink
+  ExternalLink,
+  Star,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { useSubscription } from '../../context/SubscriptionContext';
-import { PGListing, GenderPreference, FoodType, PhotoCategory, OwnerDocument } from '../../types';
+import { PGListing, GenderPreference, FoodType, PhotoCategory, OwnerDocument, Room, ListingRevision } from '../../types';
 import { listingsService } from '../../services/listingsService';
 import { storageService } from '../../services/storageService';
 import { Button } from '../../components/ui/Button';
@@ -98,6 +101,184 @@ export const CreateEditListingPage: React.FC = () => {
   const [pendingPublishForReview, setPendingPublishForReview] = useState<boolean>(true);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // Property Revision Tracking & Existing Listing State
+  const [existingListing, setExistingListing] = useState<PGListing | null>(null);
+  const [activeRevision, setActiveRevision] = useState<ListingRevision | null>(null);
+  const [isRevisionSubmittedModalOpen, setIsRevisionSubmittedModalOpen] = useState(false);
+
+  // Interactive Room Inventory & Bed Management
+  const [rooms, setRooms] = useState<Room[]>([]);
+  const [isRoomModalOpen, setIsRoomModalOpen] = useState(false);
+  const [editingRoomIndex, setEditingRoomIndex] = useState<number | null>(null);
+  const [roomFormData, setRoomFormData] = useState<Partial<Room>>({
+    room_type: 'double',
+    room_name: 'Double Sharing Study Room',
+    rent_per_bed: 8500,
+    deposit_amount: 15000,
+    total_capacity: 2,
+    available_beds: 1,
+    has_attached_washroom: true,
+    is_air_conditioned: false,
+    has_balcony: false,
+    room_amenities: ['Study Desk', 'Lockers'],
+  });
+
+  // Photo editing and reordering state
+  const [editingPhotoIndex, setEditingPhotoIndex] = useState<number | null>(null);
+  const [isPhotoEditModalOpen, setIsPhotoEditModalOpen] = useState(false);
+  const [photoEditName, setPhotoEditName] = useState('');
+  const [photoEditCategory, setPhotoEditCategory] = useState<PhotoCategory>('exterior');
+
+  const syncCapacityFromRooms = (roomList: Room[]) => {
+    if (!roomList || roomList.length === 0) return;
+    const tRooms = roomList.length;
+    const tBeds = roomList.reduce((acc, r) => acc + (Number(r.total_capacity) || 0), 0);
+    const aBeds = roomList.reduce((acc, r) => acc + (Number(r.available_beds) || 0), 0);
+    const rents = roomList.map(r => Number(r.rent_per_bed) || 0).filter(r => r > 0);
+    setTotalRooms(tRooms);
+    setTotalBeds(tBeds);
+    setAvailableBeds(aBeds);
+    if (rents.length > 0) {
+      setMinRent(Math.min(...rents));
+      setMaxRent(Math.max(...rents));
+    }
+  };
+
+  const handleOpenRoomModal = (index: number | null) => {
+    setEditingRoomIndex(index);
+    if (index !== null && rooms[index]) {
+      setRoomFormData({ ...rooms[index] });
+    } else {
+      setRoomFormData({
+        id: `rm_${Date.now()}_${rooms.length + 1}`,
+        room_type: 'double',
+        room_name: 'Double Sharing Study Room',
+        rent_per_bed: minRent || 8500,
+        deposit_amount: securityDeposit || 15000,
+        total_capacity: 2,
+        available_beds: 1,
+        has_attached_washroom: true,
+        is_air_conditioned: false,
+        has_balcony: false,
+        room_amenities: ['Study Desk', 'Lockers'],
+      });
+    }
+    setIsRoomModalOpen(true);
+  };
+
+  const handleSaveRoom = () => {
+    const totalCap = Number(roomFormData.total_capacity) || 1;
+    const availBeds = Number(roomFormData.available_beds) || 0;
+    const rent = Number(roomFormData.rent_per_bed) || 0;
+    const deposit = Number(roomFormData.deposit_amount) || 0;
+
+    if (totalCap < 1) {
+      showToast({ type: 'error', title: 'Invalid Capacity', message: 'Total capacity must be at least 1 bed.' });
+      return;
+    }
+    if (availBeds < 0) {
+      showToast({ type: 'error', title: 'Invalid Vacancy', message: 'Available beds cannot be negative.' });
+      return;
+    }
+    if (availBeds > totalCap) {
+      showToast({ type: 'error', title: 'Exceeds Capacity', message: 'Available beds cannot exceed total capacity.' });
+      return;
+    }
+    if (rent < 0) {
+      showToast({ type: 'error', title: 'Invalid Rent', message: 'Monthly rent cannot be negative.' });
+      return;
+    }
+
+    const newRoom: Room = {
+      id: roomFormData.id || `rm_${Date.now()}`,
+      listing_id: id || '',
+      room_type: roomFormData.room_type || 'double',
+      room_name: roomFormData.room_name?.trim() || `${roomFormData.room_type} Room`,
+      rent_per_bed: rent,
+      deposit_amount: deposit,
+      total_capacity: totalCap,
+      available_beds: availBeds,
+      has_attached_washroom: Boolean(roomFormData.has_attached_washroom),
+      is_air_conditioned: Boolean(roomFormData.is_air_conditioned),
+      has_balcony: Boolean(roomFormData.has_balcony),
+      room_amenities: roomFormData.room_amenities || ['Study Desk', 'Power Backup'],
+    };
+
+    let updatedRooms: Room[];
+    if (editingRoomIndex !== null) {
+      updatedRooms = rooms.map((r, i) => (i === editingRoomIndex ? newRoom : r));
+    } else {
+      updatedRooms = [...rooms, newRoom];
+    }
+
+    setRooms(updatedRooms);
+    syncCapacityFromRooms(updatedRooms);
+    setIsRoomModalOpen(false);
+  };
+
+  const handleDeleteRoom = (index: number) => {
+    if (rooms.length <= 1) {
+      showToast({ type: 'error', title: 'Room Required', message: 'A property must have at least one room configuration.' });
+      return;
+    }
+    const updated = rooms.filter((_, i) => i !== index);
+    setRooms(updated);
+    syncCapacityFromRooms(updated);
+  };
+
+  const handleSetCoverPhoto = (photoId: string) => {
+    setCategorizedPhotos(prev => {
+      const idx = prev.findIndex(p => p.id === photoId);
+      if (idx <= 0) return prev;
+      const target = prev[idx];
+      const rest = prev.filter(p => p.id !== photoId);
+      return [target, ...rest];
+    });
+    showToast({
+      type: 'success',
+      title: 'Cover Photo Updated',
+      message: 'Photograph set as primary cover image for student search results.',
+    });
+  };
+
+  const handleMovePhoto = (index: number, direction: 'left' | 'right') => {
+    setCategorizedPhotos(prev => {
+      const newIdx = direction === 'left' ? index - 1 : index + 1;
+      if (newIdx < 0 || newIdx >= prev.length) return prev;
+      const clone = [...prev];
+      const temp = clone[index];
+      clone[index] = clone[newIdx];
+      clone[newIdx] = temp;
+      return clone;
+    });
+  };
+
+  const handleOpenPhotoEdit = (index: number) => {
+    setEditingPhotoIndex(index);
+    const photo = categorizedPhotos[index];
+    if (photo) {
+      setPhotoEditName(photo.name);
+      setPhotoEditCategory(photo.category);
+      setIsPhotoEditModalOpen(true);
+    }
+  };
+
+  const handleSavePhotoEdit = () => {
+    if (editingPhotoIndex === null) return;
+    setCategorizedPhotos(prev =>
+      prev.map((p, idx) =>
+        idx === editingPhotoIndex
+          ? {
+              ...p,
+              name: photoEditName.trim() || p.name,
+              category: photoEditCategory,
+            }
+          : p
+      )
+    );
+    setIsPhotoEditModalOpen(false);
+  };
 
   const handleDeleteCurrentListing = async () => {
     if (!id || !isEditing) return;
@@ -257,8 +438,9 @@ export const CreateEditListingPage: React.FC = () => {
   // Load existing data if editing
   useEffect(() => {
     if (isEditing && id) {
-      listingsService.getListingById(id).then(listing => {
+      listingsService.getListingById(id).then(async listing => {
         if (!listing) return;
+        setExistingListing(listing);
 
         // Security / BOLA check: Ensure caller owns the listing
         if (user && user.role !== 'admin' && listing.owner_id !== user.id) {
@@ -271,45 +453,103 @@ export const CreateEditListingPage: React.FC = () => {
           return;
         }
 
-        setName(listing.name);
-        setTagline(listing.tagline);
-        setDescription(listing.description);
-        setPropertyType(listing.property_type as any);
-        setGenderPreference(listing.gender_preference);
-        setAddress(listing.address);
-        setLocality(listing.locality);
-        setCity(listing.city);
-        setPostalCode(listing.postal_code);
-        setLandmark(listing.landmark);
-        if (listing.google_maps_url) setGoogleMapsUrl(listing.google_maps_url);
-        if (listing.nearby_colleges[0]) {
-          setCollegeName(listing.nearby_colleges[0].college_name);
-          setCollegeDistance(listing.nearby_colleges[0].distance_km);
+        // Check for active pending or rejected revision
+        let revisionToUse: ListingRevision | null = null;
+        try {
+          revisionToUse = await listingsService.getListingRevision(id);
+          if (revisionToUse) {
+            setActiveRevision(revisionToUse);
+          }
+        } catch (revErr) {
+          console.warn('Listing revision fetch notice:', revErr);
         }
-        setMinRent(listing.min_monthly_rent);
-        setMaxRent(listing.max_monthly_rent);
-        setSecurityDeposit(listing.security_deposit);
-        setMaintenance(listing.maintenance_charge || 0);
-        setElectricityPolicy(listing.electricity_policy);
-        setNoticePeriod(listing.notice_period_days);
-        setFoodType(listing.food_type);
-        setFoodDescription(listing.food_description || '');
-        setSelectedAmenities(listing.amenities);
-        setRules(listing.house_rules);
 
-        if (listing.owner_name) setOwnerFullName(listing.owner_name);
-        if (listing.owner_email) setOwnerEmail(listing.owner_email);
-        if (listing.owner_phone) setOwnerPhone(listing.owner_phone);
+        const sourceData: Partial<PGListing> = (revisionToUse && (revisionToUse.status === 'pending_review' || revisionToUse.status === 'under_review' || revisionToUse.status === 'draft' || revisionToUse.status === 'rejected'))
+          ? { ...listing, ...revisionToUse.proposed_changes }
+          : listing;
+
+        setName(sourceData.name || listing.name);
+        setTagline(sourceData.tagline || listing.tagline);
+        setDescription(sourceData.description || listing.description);
+        setPropertyType(sourceData.property_type as any || listing.property_type);
+        setGenderPreference(sourceData.gender_preference || listing.gender_preference);
+        setAddress(sourceData.address || listing.address);
+        setLocality(sourceData.locality || listing.locality);
+        setCity(sourceData.city || listing.city);
+        setPostalCode(sourceData.postal_code || listing.postal_code);
+        setLandmark(sourceData.landmark || listing.landmark);
+        if (sourceData.google_maps_url) setGoogleMapsUrl(sourceData.google_maps_url);
+        if (sourceData.nearby_colleges && sourceData.nearby_colleges[0]) {
+          setCollegeName(sourceData.nearby_colleges[0].college_name);
+          setCollegeDistance(sourceData.nearby_colleges[0].distance_km);
+        }
+        setMinRent(sourceData.min_monthly_rent || listing.min_monthly_rent);
+        setMaxRent(sourceData.max_monthly_rent || listing.max_monthly_rent);
+        setSecurityDeposit(sourceData.security_deposit || listing.security_deposit);
+        setMaintenance(sourceData.maintenance_charge || listing.maintenance_charge || 0);
+        setElectricityPolicy(sourceData.electricity_policy || listing.electricity_policy);
+        setNoticePeriod(sourceData.notice_period_days || listing.notice_period_days);
+        setFoodType(sourceData.food_type || listing.food_type);
+        setFoodDescription(sourceData.food_description || listing.food_description || '');
+        setSelectedAmenities(sourceData.amenities || listing.amenities);
+        setRules(sourceData.house_rules || listing.house_rules);
+
+        if (sourceData.owner_name) setOwnerFullName(sourceData.owner_name);
+        if (sourceData.owner_email) setOwnerEmail(sourceData.owner_email);
+        if (sourceData.owner_phone) setOwnerPhone(sourceData.owner_phone);
+        if (sourceData.owner_type) setOwnerType(sourceData.owner_type);
+        if (sourceData.business_name) setBusinessName(sourceData.business_name);
 
         // Convert listing images to categorized photos
-        if (listing.images && listing.images.length > 0) {
-          const catPhotos: CategorizedPhoto[] = listing.images.map((img, i) => ({
+        const imagesList = sourceData.images && sourceData.images.length > 0 ? sourceData.images : listing.images;
+        if (imagesList && imagesList.length > 0) {
+          const catPhotos: CategorizedPhoto[] = imagesList.map((img, i) => ({
             id: img.id || `img_${i}`,
             url: img.image_url,
             category: (img.category as PhotoCategory) || (i === 0 ? 'exterior' : 'bedroom'),
             name: img.caption || `Property Photo ${i + 1}`
           }));
           setCategorizedPhotos(catPhotos);
+        }
+
+        // Initialize rooms
+        const roomsList = sourceData.rooms && sourceData.rooms.length > 0 ? sourceData.rooms : listing.rooms;
+        if (roomsList && roomsList.length > 0) {
+          setRooms(roomsList);
+          syncCapacityFromRooms(roomsList);
+        } else {
+          const initialRooms: Room[] = [
+            {
+              id: `rm_${Date.now()}_1`,
+              listing_id: id,
+              room_type: 'single',
+              room_name: 'Single Private Room',
+              rent_per_bed: listing.max_monthly_rent || 14000,
+              deposit_amount: listing.security_deposit || 15000,
+              total_capacity: 4,
+              available_beds: 2,
+              has_attached_washroom: true,
+              is_air_conditioned: listing.amenities?.includes('AC Rooms') || false,
+              has_balcony: true,
+              room_amenities: ['Study Desk', 'Wardrobe', 'Power Backup'],
+            },
+            {
+              id: `rm_${Date.now()}_2`,
+              listing_id: id,
+              room_type: 'double',
+              room_name: 'Double Sharing Study Room',
+              rent_per_bed: listing.min_monthly_rent || 8500,
+              deposit_amount: listing.security_deposit || 15000,
+              total_capacity: 12,
+              available_beds: 5,
+              has_attached_washroom: true,
+              is_air_conditioned: false,
+              has_balcony: false,
+              room_amenities: ['Study Desks', 'Lockers'],
+            }
+          ];
+          setRooms(initialRooms);
+          syncCapacityFromRooms(initialRooms);
         }
       });
     }
@@ -554,9 +794,89 @@ export const CreateEditListingPage: React.FC = () => {
 
   const executeSaveListing = async (publishForReview: boolean) => {
     setIsLoading(true);
-    setUploadStatusText('Saving property listing details to Supabase...');
+    setUploadStatusText('Processing property details and photos...');
 
     const targetListingId = isEditing && id ? id : `pg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+
+    // 1. Upload photo files to Supabase Storage bucket: property-images
+    const uploadedStoragePaths: string[] = [];
+    const finalImages: {
+      id: string;
+      image_url: string;
+      caption: string;
+      category: PhotoCategory;
+      display_order: number;
+      is_primary: boolean;
+    }[] = [];
+
+    for (let idx = 0; idx < categorizedPhotos.length; idx++) {
+      const photo = categorizedPhotos[idx];
+      let finalImageUrl = photo.url;
+
+      if (photo.file) {
+        setUploadStatusText(`Uploading photo ${idx + 1} of ${categorizedPhotos.length}: ${photo.name}...`);
+        try {
+          const uploadRes = await storageService.uploadPropertyImage(
+            user?.id || existingListing?.owner_id || 'owner_uploads',
+            targetListingId,
+            photo.file
+          );
+          finalImageUrl = uploadRes.publicUrl;
+          uploadedStoragePaths.push(uploadRes.path);
+        } catch (uploadErr: any) {
+          console.warn('Storage upload notice:', uploadErr);
+        }
+      }
+
+      finalImages.push({
+        id: photo.id.startsWith('upload_') || photo.id.startsWith('p') ? `img_${Date.now()}_${idx}` : photo.id,
+        image_url: finalImageUrl,
+        caption: photo.name,
+        category: photo.category,
+        display_order: idx + 1,
+        is_primary: idx === 0,
+      });
+    }
+
+    // 2. Prepare room records ensuring valid IDs & capacities
+    const finalRooms: Room[] = rooms.length > 0 ? rooms.map((r, rIdx) => ({
+      ...r,
+      id: r.id || `rm_${Date.now()}_${rIdx}`,
+      listing_id: targetListingId,
+      total_capacity: Number(r.total_capacity) || 1,
+      available_beds: Number(r.available_beds) || 0,
+      rent_per_bed: Number(r.rent_per_bed) || minRent,
+      deposit_amount: Number(r.deposit_amount) || securityDeposit,
+    })) : [
+      {
+        id: `room_s_${Date.now()}`,
+        listing_id: targetListingId,
+        room_type: 'single',
+        room_name: 'Single Private Room',
+        rent_per_bed: Number(maxRent) || 14000,
+        deposit_amount: Number(securityDeposit) || 15000,
+        total_capacity: Number(singleRooms) || 4,
+        available_beds: Math.min(2, Number(singleRooms) || 4),
+        has_attached_washroom: true,
+        is_air_conditioned: selectedAmenities.includes('AC Rooms'),
+        has_balcony: true,
+        room_amenities: ['Study Desk', 'Wardrobe', 'Power Backup'],
+      },
+      {
+        id: `room_d_${Date.now()}`,
+        listing_id: targetListingId,
+        room_type: 'double',
+        room_name: 'Double Sharing Study Room',
+        rent_per_bed: Number(minRent) || 8500,
+        deposit_amount: Number(securityDeposit) || 15000,
+        total_capacity: (Number(doubleRooms) || 6) * 2,
+        available_beds: Number(availableBeds) || 5,
+        has_attached_washroom: true,
+        is_air_conditioned: false,
+        has_balcony: false,
+        room_amenities: ['Study Desks', 'Lockers'],
+      },
+    ];
 
     const listingPayload: Partial<PGListing> = {
       id: targetListingId,
@@ -593,100 +913,75 @@ export const CreateEditListingPage: React.FC = () => {
       food_description: foodDescription,
       amenities: selectedAmenities,
       house_rules: rules,
-      publication_status: publishForReview ? 'pending_review' : 'draft',
-      verification_status: publishForReview ? 'pending_verification' : 'owner_submitted',
-      images: [], // Handled explicitly below via Supabase Storage and listing_images
-      rooms: [
-        {
-          id: `room_s_${Date.now()}`,
-          listing_id: targetListingId,
-          room_type: 'single',
-          room_name: 'Single Private Room',
-          rent_per_bed: Number(maxRent) || 14000,
-          deposit_amount: Number(securityDeposit) || 15000,
-          total_capacity: Number(singleRooms) || 4,
-          available_beds: Math.min(2, Number(singleRooms) || 4),
-          has_attached_washroom: true,
-          is_air_conditioned: selectedAmenities.includes('AC Rooms'),
-          has_balcony: true,
-          room_amenities: ['Study Desk', 'Wardrobe', 'Power Backup'],
-        },
-        {
-          id: `room_d_${Date.now()}`,
-          listing_id: targetListingId,
-          room_type: 'double',
-          room_name: 'Double Sharing Study Room',
-          rent_per_bed: Number(minRent) || 9500,
-          deposit_amount: Number(securityDeposit) || 15000,
-          total_capacity: (Number(doubleRooms) || 6) * 2,
-          available_beds: Number(availableBeds) || 5,
-          has_attached_washroom: true,
-          is_air_conditioned: false,
-          has_balcony: false,
-          room_amenities: ['Study Desks', 'Lockers'],
-        },
-      ],
+      rooms: finalRooms,
+      images: finalImages as any,
     };
 
-    const uploadedStoragePaths: string[] = [];
-
     try {
-      // 1. Create or update property listing row in pg_listings
-      let savedListing: PGListing;
       if (isEditing && id) {
-        savedListing = await listingsService.updateListing(id, listingPayload);
+        // EDIT EXISTING LISTING
+        if (publishForReview) {
+          // Submit proposed edits to admin review queue
+          setUploadStatusText('Submitting proposed changes to admin verification queue...');
+          const result = await listingsService.submitListingChangesForVerification(id, listingPayload);
+          if (result.revision) {
+            setActiveRevision(result.revision);
+          }
+          showToast({
+            type: 'success',
+            title: 'Submitted for Verification',
+            message: `Proposed changes for "${name}" submitted to admin queue. Live listing continues showing approved details.`,
+          });
+          setIsRevisionSubmittedModalOpen(true);
+        } else {
+          // Save draft of unfinished edits
+          setUploadStatusText('Saving draft edits...');
+          const result = await listingsService.saveListingDraft(id, listingPayload);
+          if (result.revision) {
+            setActiveRevision(result.revision);
+          }
+          showToast({
+            type: 'info',
+            title: 'Draft Saved',
+            message: `Unfinished changes for "${name}" saved safely as draft.`,
+          });
+          navigate('/owner/listings');
+        }
       } else {
-        savedListing = await listingsService.createListing(listingPayload);
-      }
+        // CREATE NEW LISTING
+        setUploadStatusText('Saving new property listing...');
+        listingPayload.publication_status = publishForReview ? 'pending_review' : 'draft';
+        listingPayload.verification_status = publishForReview ? 'pending_verification' : 'owner_submitted';
 
-      const actualListingId = savedListing.id || targetListingId;
+        const savedListing = await listingsService.createListing(listingPayload);
+        const actualListingId = savedListing.id || targetListingId;
 
-      // 2. Upload photo files to Supabase Storage bucket: property-images
-      const finalImages: {
-        id: string;
-        image_url: string;
-        caption: string;
-        category: PhotoCategory;
-        display_order: number;
-        is_primary: boolean;
-      }[] = [];
-
-      for (let idx = 0; idx < categorizedPhotos.length; idx++) {
-        const photo = categorizedPhotos[idx];
-        let finalImageUrl = photo.url;
-
-        if (photo.file) {
-          setUploadStatusText(`Uploading photo ${idx + 1} of ${categorizedPhotos.length}: ${photo.name}...`);
-          const uploadRes = await storageService.uploadPropertyImage(
-            user?.id || savedListing.owner_id,
-            actualListingId,
-            photo.file
-          );
-          finalImageUrl = uploadRes.publicUrl;
-          uploadedStoragePaths.push(uploadRes.path);
+        // Save image metadata rows
+        if (finalImages.length > 0) {
+          await listingsService.saveListingImages(actualListingId, finalImages);
         }
 
-        finalImages.push({
-          id: photo.id.startsWith('upload_') || photo.id.startsWith('p') ? `img_${Date.now()}_${idx}` : photo.id,
-          image_url: finalImageUrl,
-          caption: photo.name,
-          category: photo.category,
-          display_order: idx + 1,
-          is_primary: idx === 0,
+        showToast({
+          type: 'success',
+          title: publishForReview ? 'Submitted for Review' : 'Draft Saved',
+          message: publishForReview
+            ? `${name} submitted for review. 30-Day Free Trial countdown active!`
+            : `${name} saved as draft in Supabase.`,
         });
+
+        if (publishForReview) {
+          try {
+            await startTrialOnFirstListing();
+          } catch (trialErr) {
+            console.warn('Could not trigger trial start on listing submission:', trialErr);
+          }
+          setIsSubmitConfirmOpen(true);
+        } else {
+          navigate('/owner/dashboard');
+        }
       }
 
-      // 3. Save image metadata rows into public.listing_images table
-      setUploadStatusText('Saving property images in database...');
-      try {
-        await listingsService.saveListingImages(actualListingId, finalImages);
-      } catch (imgError: any) {
-        // Rollback uploaded storage files if DB insert failed
-        await storageService.deletePropertyImages(uploadedStoragePaths);
-        throw imgError;
-      }
-
-      // 4. Update local state with the final URLs so subsequent edits keep the storage URLs
+      // Update local state with the final URLs
       setCategorizedPhotos(
         finalImages.map(img => ({
           id: img.id,
@@ -696,29 +991,7 @@ export const CreateEditListingPage: React.FC = () => {
         }))
       );
 
-      showToast({
-        type: 'success',
-        title: publishForReview ? 'Submitted for Review' : 'Draft Saved',
-        message: publishForReview
-          ? `${name} and ${finalImages.length} photo(s) submitted for review. 30-Day Free Trial countdown active!`
-          : `${name} and ${finalImages.length} photo(s) saved as draft in Supabase.`,
-      });
-
-      if (publishForReview) {
-        try {
-          await startTrialOnFirstListing();
-        } catch (trialErr) {
-          console.warn('Could not trigger trial start on listing submission:', trialErr);
-        }
-      }
-
       await refreshSubscription();
-
-      if (publishForReview) {
-        setIsSubmitConfirmOpen(true);
-      } else {
-        navigate('/owner/dashboard');
-      }
     } catch (err: any) {
       showToast({
         type: 'error',
@@ -800,11 +1073,75 @@ export const CreateEditListingPage: React.FC = () => {
               isLoading={isLoading}
               leftIcon={<Send className="w-3.5 h-3.5" />}
             >
-              Submit for Review
+              {isEditing ? 'Submit Changes for Verification' : 'Submit for Review'}
             </Button>
           )}
         </div>
       </div>
+
+      {/* REVISION & VERIFICATION STATUS BANNERS */}
+      {isEditing && activeRevision && (activeRevision.status === 'pending_review' || activeRevision.status === 'under_review') && (
+        <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs space-y-2 animate-fadeIn">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 font-bold text-white">
+              <Clock className="w-4 h-4 text-amber-400" />
+              <span>Proposed Changes Awaiting Admin Verification</span>
+            </div>
+            <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40">
+              {activeRevision.status.replace('_', ' ')}
+            </span>
+          </div>
+          <p className="text-[11px] text-slate-300">
+            You submitted edits for this property on <strong>{new Date(activeRevision.submission_date).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</strong>.
+            The moderation team is currently verifying the proposed updates, room configurations, and photos.
+          </p>
+          <div className="p-2.5 rounded-xl bg-navy-950/80 border border-amber-500/20 text-[11px] text-slate-300 flex items-start gap-2">
+            <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+            <span>
+              <strong>Student Visibility Guarantee:</strong> Your published listing remains live for students with its previously approved details. Unapproved edits will not be shown to students until verified. You can update your submission and save changes again at any time.
+            </span>
+          </div>
+        </div>
+      )}
+
+      {isEditing && activeRevision && activeRevision.status === 'rejected' && (
+        <div className="p-4 rounded-2xl bg-red-500/10 border border-red-500/30 text-red-200 text-xs space-y-2 animate-fadeIn">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 font-bold text-white">
+              <AlertCircle className="w-4 h-4 text-red-400" />
+              <span>Previous Proposed Edits Were Rejected by Admin</span>
+            </div>
+            <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-red-500/20 text-red-300 border border-red-500/40">
+              Revision Declined
+            </span>
+          </div>
+          <div className="p-3 rounded-xl bg-navy-950/80 border border-red-500/20 text-xs text-white">
+            <span className="text-red-400 font-bold block mb-1">Moderator Feedback / Reason:</span>
+            <p className="italic text-slate-200">"{activeRevision.rejection_reason || 'Please correct the flagged details and resubmit.'}"</p>
+          </div>
+          <p className="text-[11px] text-slate-300">
+            Please make the required adjustments based on the moderator's notes above, then click <strong>"Submit Changes for Verification"</strong> to resubmit.
+          </p>
+        </div>
+      )}
+
+      {isEditing && !activeRevision && existingListing && existingListing.rejection_reason && existingListing.publication_status === 'rejected' && (
+        <div className="p-4 rounded-2xl bg-red-500/10 border border-red-500/30 text-red-200 text-xs space-y-2 animate-fadeIn">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 font-bold text-white">
+              <AlertCircle className="w-4 h-4 text-red-400" />
+              <span>Property Listing Was Rejected</span>
+            </div>
+            <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-red-500/20 text-red-300 border border-red-500/40">
+              Rejected
+            </span>
+          </div>
+          <div className="p-3 rounded-xl bg-navy-950/80 border border-red-500/20 text-xs text-white">
+            <span className="text-red-400 font-bold block mb-1">Rejection Feedback:</span>
+            <p className="italic text-slate-200">"{existingListing.rejection_reason}"</p>
+          </div>
+        </div>
+      )}
 
       {/* Progress Indicator Stepper */}
       <div className="bg-navy-900/90 border border-navy-800 rounded-3xl p-4 sm:p-6 shadow-xl space-y-4">
@@ -1274,6 +1611,112 @@ export const CreateEditListingPage: React.FC = () => {
               </div>
             </div>
 
+            {/* Individual Room Types & Bed Inventory List */}
+            <div className="p-5 rounded-2xl bg-navy-950/80 border border-navy-800 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-white flex items-center gap-2">
+                    <BedDouble className="w-4 h-4 text-violet-400" />
+                    <span>Individual Room Tiers &amp; Sharing Configurations ({rooms.length})</span>
+                  </h4>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    Define single, double, or triple sharing rooms with dedicated pricing and vacant bed tracking.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => handleOpenRoomModal(null)}
+                  leftIcon={<Plus className="w-3.5 h-3.5" />}
+                >
+                  Add Room Tier
+                </Button>
+              </div>
+
+              {rooms.length === 0 ? (
+                <div className="p-6 text-center rounded-xl border border-dashed border-navy-800 bg-navy-900/40 text-xs text-slate-400 space-y-2">
+                  <p>No individual room tiers configured yet.</p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleOpenRoomModal(null)}
+                    leftIcon={<Plus className="w-3.5 h-3.5" />}
+                  >
+                    Configure First Room Tier
+                  </Button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {rooms.map((room, idx) => (
+                    <div
+                      key={room.id || idx}
+                      className="p-4 rounded-2xl bg-navy-900 border border-navy-800 hover:border-navy-750 transition-all space-y-2.5"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-violet-300 bg-violet-500/15 px-2 py-0.5 rounded-full border border-violet-500/30">
+                            {room.room_type.replace('_', ' ')}
+                          </span>
+                          <h5 className="font-bold text-white text-sm mt-1">{room.room_name || `${room.room_type} Room`}</h5>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenRoomModal(idx)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-navy-800 transition-colors"
+                            title="Edit room configuration"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteRoom(idx)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                            title="Delete room tier"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-[11px] text-slate-300 pt-1.5 border-t border-navy-800/80">
+                        <div>
+                          <span className="text-slate-400 block text-[10px]">Monthly Rent:</span>
+                          <strong className="text-white">₹{Number(room.rent_per_bed).toLocaleString('en-IN')}/mo</strong>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block text-[10px]">Deposit:</span>
+                          <strong className="text-white">₹{Number(room.deposit_amount).toLocaleString('en-IN')}</strong>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block text-[10px]">Total Beds:</span>
+                          <strong className="text-white">{room.total_capacity} beds</strong>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block text-[10px]">Vacant Beds:</span>
+                          <strong className="text-emerald-400">{room.available_beds} beds</strong>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap gap-1 pt-1 text-[10px]">
+                        {room.has_attached_washroom && (
+                          <span className="px-2 py-0.5 rounded-md bg-navy-950 text-slate-300 border border-navy-800">Attached Bath</span>
+                        )}
+                        {room.is_air_conditioned && (
+                          <span className="px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-300 border border-blue-500/20">AC Room</span>
+                        )}
+                        {room.has_balcony && (
+                          <span className="px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">Balcony</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             {/* Food & Meals */}
             <div className="space-y-3">
               <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider">
@@ -1499,30 +1942,99 @@ export const CreateEditListingPage: React.FC = () => {
                   </p>
                 </div>
               ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                  {categorizedPhotos.map(p => (
-                    <div
-                      key={p.id}
-                      className="group relative rounded-2xl overflow-hidden border border-navy-800 bg-navy-950 aspect-[4/3] shadow-md"
-                    >
-                      <img src={p.url} alt={p.name} className="w-full h-full object-cover" />
-                      <div className="absolute inset-0 bg-gradient-to-t from-navy-950/90 via-transparent to-transparent opacity-90" />
-                      <span className="absolute top-2 left-2 text-[10px] font-bold px-2 py-0.5 rounded-full bg-navy-900/80 text-violet-300 border border-violet-500/30 capitalize">
-                        {p.category}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => handleRemovePhoto(p.id)}
-                        className="absolute top-2 right-2 p-1.5 rounded-lg bg-red-500/80 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600"
-                        title="Remove image"
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                  {categorizedPhotos.map((p, idx) => {
+                    const isCover = idx === 0;
+                    return (
+                      <div
+                        key={p.id}
+                        className={`group relative rounded-2xl overflow-hidden border bg-navy-950 aspect-[4/3] shadow-md transition-all ${
+                          isCover ? 'border-amber-500 ring-2 ring-amber-500/30' : 'border-navy-800 hover:border-navy-700'
+                        }`}
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                      <p className="absolute bottom-2 left-2 right-2 text-[11px] text-white font-medium truncate">
-                        {p.name}
-                      </p>
-                    </div>
-                  ))}
+                        <img src={p.url} alt={p.name} className="w-full h-full object-cover" />
+                        <div className="absolute inset-0 bg-gradient-to-t from-navy-950/95 via-navy-950/20 to-transparent" />
+
+                        {/* Badges */}
+                        <div className="absolute top-2 left-2 flex flex-col gap-1 items-start">
+                          {isCover ? (
+                            <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/90 text-navy-950 shadow-md">
+                              <Star className="w-2.5 h-2.5 fill-current" /> Cover Photo
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-navy-900/80 text-violet-300 border border-violet-500/30 capitalize">
+                              {p.category}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Top Action Buttons */}
+                        <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenPhotoEdit(idx)}
+                            className="p-1.5 rounded-lg bg-navy-900/90 text-slate-200 hover:text-white hover:bg-navy-800 transition-colors"
+                            title="Edit caption and category"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRemovePhoto(p.id)}
+                            className="p-1.5 rounded-lg bg-red-500/90 text-white hover:bg-red-600 transition-colors"
+                            title="Remove photograph"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+
+                        {/* Bottom Info & Reorder Controls */}
+                        <div className="absolute bottom-2 left-2 right-2 space-y-1">
+                          <p className="text-[11px] text-white font-medium truncate" title={p.name}>
+                            {p.name}
+                          </p>
+
+                          <div className="flex items-center justify-between text-[10px] pt-1 border-t border-navy-800/60">
+                            {!isCover ? (
+                              <button
+                                type="button"
+                                onClick={() => handleSetCoverPhoto(p.id)}
+                                className="text-amber-400 hover:text-amber-300 font-bold flex items-center gap-1 transition-colors"
+                                title="Set as primary thumbnail for public search"
+                              >
+                                <Star className="w-3 h-3" /> Make Cover
+                              </button>
+                            ) : (
+                              <span className="text-amber-400 font-semibold">Primary</span>
+                            )}
+
+                            <div className="flex items-center gap-1 ml-auto">
+                              {idx > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleMovePhoto(idx, 'left')}
+                                  className="p-1 rounded bg-navy-900/80 hover:bg-navy-800 text-slate-300 hover:text-white"
+                                  title="Move earlier"
+                                >
+                                  <ChevronLeft className="w-3 h-3" />
+                                </button>
+                              )}
+                              {idx < categorizedPhotos.length - 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleMovePhoto(idx, 'right')}
+                                  className="p-1 rounded bg-navy-900/80 hover:bg-navy-800 text-slate-300 hover:text-white"
+                                  title="Move later"
+                                >
+                                  <ChevronRight className="w-3 h-3" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -1783,11 +2295,26 @@ export const CreateEditListingPage: React.FC = () => {
             <div className="p-4 rounded-2xl bg-brand-500/10 border border-brand-500/20 text-xs text-brand-200 space-y-1">
               <p className="font-bold flex items-center gap-1.5 text-white">
                 <ShieldCheck className="w-4 h-4 text-brand-400" />
-                <span>Publication &amp; Verification Protocol</span>
+                <span>{isEditing ? 'Admin Verification & Live Protection Protocol' : 'Publication & Verification Protocol'}</span>
               </p>
               <p>
-                Upon clicking "Submit for Review", this listing will be recorded with status <strong className="text-amber-300">Pending Review</strong> and verification status <strong className="text-amber-300">Pending Verification</strong>.
-                It will NOT display an automatic Verified badge until physical audit is conducted by operations.
+                {isEditing ? (
+                  <>
+                    Upon submitting, your proposed edits will be submitted to the <strong className="text-amber-300">Admin Verification Queue</strong> as a pending revision.
+                    {existingListing?.publication_status === 'published' ? (
+                      <span className="block mt-1 text-emerald-300">
+                        🛡️ <strong>Live Student Protection:</strong> Your currently published property remains fully active and visible to students until the admin reviews and approves your updated version.
+                      </span>
+                    ) : (
+                      ' Your property will be published to students once our verification team reviews the details.'
+                    )}
+                  </>
+                ) : (
+                  <>
+                    Upon clicking "Submit for Review", this listing will be recorded with status <strong className="text-amber-300">Pending Review</strong> and verification status <strong className="text-amber-300">Pending Verification</strong>.
+                    It will NOT display an automatic Verified badge until physical audit is conducted by operations.
+                  </>
+                )}
               </p>
             </div>
           </div>
@@ -1832,13 +2359,12 @@ export const CreateEditListingPage: React.FC = () => {
             <Button
               type="button"
               variant="outline"
-
               size="md"
               onClick={() => handleSaveListing(false)}
               isLoading={isLoading}
               leftIcon={<Save className="w-4 h-4" />}
             >
-              Save Draft
+              {isEditing ? 'Save Draft Edits' : 'Save Draft'}
             </Button>
 
             {currentStep < 6 ? (
@@ -1860,7 +2386,7 @@ export const CreateEditListingPage: React.FC = () => {
                 isLoading={isLoading}
                 leftIcon={<Send className="w-4 h-4" />}
               >
-                Submit for Review
+                {isEditing ? 'Submit Changes for Verification' : 'Submit for Review'}
               </Button>
             )}
           </div>
@@ -2056,7 +2582,300 @@ export const CreateEditListingPage: React.FC = () => {
         </div>
       </Modal>
 
+      {/* REVISION SUBMISSION CONFIRMATION MODAL */}
+      <Modal
+        isOpen={isRevisionSubmittedModalOpen}
+        onClose={() => {
+          setIsRevisionSubmittedModalOpen(false);
+          navigate('/owner/listings');
+        }}
+        title="Changes Submitted for Verification"
+        description="Your proposed modifications have been submitted to the Admin Verification Queue."
+        maxWidth="md"
+      >
+        <div className="space-y-4 text-center py-2">
+          <div className="w-14 h-14 rounded-2xl bg-brand-500/10 border border-brand-500/20 text-brand-400 flex items-center justify-center mx-auto">
+            <ShieldCheck className="w-8 h-8" />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-lg font-bold text-white">{name}</h3>
+            <p className="text-xs text-slate-400">{locality}, {city}</p>
+          </div>
+
+          <div className="p-3.5 rounded-2xl bg-navy-950 border border-navy-800 text-left space-y-2 text-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-slate-400">Review Status:</span>
+              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/10 text-amber-300 border border-amber-500/20">
+                Pending Verification
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-slate-400">Public Visibility:</span>
+              <span className="text-emerald-400 font-medium">
+                {existingListing?.publication_status === 'published' ? 'Live (Approved Details Visible)' : 'Unpublished (Under Review)'}
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-300 leading-relaxed pt-2 border-t border-navy-800">
+              {existingListing?.publication_status === 'published'
+                ? 'Students browsing Rento will continue seeing your previously approved rates, rooms, and photos while the admin evaluates your new changes.'
+                : 'Your listing will be published once our operations team verifies your details.'}
+            </p>
+          </div>
+
+          <Button
+            variant="glow"
+            className="w-full font-bold mt-2"
+            size="md"
+            onClick={() => {
+              setIsRevisionSubmittedModalOpen(false);
+              navigate('/owner/listings');
+            }}
+          >
+            Return to My Properties
+          </Button>
+        </div>
+      </Modal>
+
+      {/* ROOM CONFIGURATION MODAL */}
+      <Modal
+        isOpen={isRoomModalOpen}
+        onClose={() => setIsRoomModalOpen(false)}
+        title={editingRoomIndex !== null ? 'Edit Room Configuration' : 'Add Room Configuration'}
+        description="Configure bed capacity, pricing, and amenities for this room tier."
+        maxWidth="lg"
+      >
+        <div className="space-y-4 py-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">
+                Room Name / Label <span className="text-red-400">*</span>
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. Deluxe Double Room (Wing A)"
+                value={roomFormData.room_name || ''}
+                onChange={e => setRoomFormData(prev => ({ ...prev, room_name: e.target.value }))}
+                className="w-full bg-navy-950 border border-navy-700 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-brand-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">Room Sharing Type</label>
+              <select
+                value={roomFormData.room_type || 'double'}
+                onChange={e => {
+                  const val = e.target.value as any;
+                  const defaultCap = val === 'single' ? 1 : val === 'double' ? 2 : val === 'triple' ? 3 : val === 'four' ? 4 : 2;
+                  setRoomFormData(prev => ({
+                    ...prev,
+                    room_type: val,
+                    total_capacity: defaultCap,
+                    available_beds: Math.min(Number(prev.available_beds) || 1, defaultCap),
+                  }));
+                }}
+                className="w-full bg-navy-950 border border-navy-700 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-brand-500"
+              >
+                <option value="single">Single Room (Private)</option>
+                <option value="double">Double Sharing (2 Beds)</option>
+                <option value="triple">Triple Sharing (3 Beds)</option>
+                <option value="four">Four Sharing (4 Beds)</option>
+                <option value="other">Other / Dormitory</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">
+                Monthly Rent per Bed (₹) <span className="text-red-400">*</span>
+              </label>
+              <input
+                type="number"
+                min="500"
+                step="100"
+                value={roomFormData.rent_per_bed || ''}
+                onChange={e => setRoomFormData(prev => ({ ...prev, rent_per_bed: Number(e.target.value) }))}
+                className="w-full bg-navy-950 border border-navy-700 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-brand-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">
+                Security Deposit (₹)
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="500"
+                value={roomFormData.deposit_amount || ''}
+                onChange={e => setRoomFormData(prev => ({ ...prev, deposit_amount: Number(e.target.value) }))}
+                className="w-full bg-navy-950 border border-navy-700 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-brand-500"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">
+                Total Bed Capacity in Room <span className="text-red-400">*</span>
+              </label>
+              <input
+                type="number"
+                min="1"
+                max="20"
+                value={roomFormData.total_capacity || ''}
+                onChange={e => {
+                  const cap = Math.max(1, Number(e.target.value));
+                  setRoomFormData(prev => ({
+                    ...prev,
+                    total_capacity: cap,
+                    available_beds: Math.min(Number(prev.available_beds) || 0, cap),
+                  }));
+                }}
+                className="w-full bg-navy-950 border border-navy-700 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-brand-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">
+                Available Vacant Beds <span className="text-red-400">*</span>
+              </label>
+              <input
+                type="number"
+                min="0"
+                max={roomFormData.total_capacity || 20}
+                value={roomFormData.available_beds ?? ''}
+                onChange={e => {
+                  const beds = Number(e.target.value);
+                  setRoomFormData(prev => ({
+                    ...prev,
+                    available_beds: Math.min(Math.max(0, beds), Number(prev.total_capacity) || 20),
+                  }));
+                }}
+                className="w-full bg-navy-950 border border-navy-700 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-brand-500"
+              />
+              <span className="text-[10px] text-slate-400 mt-0.5 block">
+                Cannot exceed total bed capacity ({roomFormData.total_capacity || 0})
+              </span>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 mb-2">Room Features</label>
+            <div className="flex flex-wrap gap-4 text-xs">
+              <label className="flex items-center gap-2 cursor-pointer text-slate-300 hover:text-white">
+                <input
+                  type="checkbox"
+                  checked={Boolean(roomFormData.has_attached_washroom)}
+                  onChange={e => setRoomFormData(prev => ({ ...prev, has_attached_washroom: e.target.checked }))}
+                  className="rounded border-navy-700 text-brand-500 focus:ring-0"
+                />
+                Attached Washroom
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer text-slate-300 hover:text-white">
+                <input
+                  type="checkbox"
+                  checked={Boolean(roomFormData.is_air_conditioned)}
+                  onChange={e => setRoomFormData(prev => ({ ...prev, is_air_conditioned: e.target.checked }))}
+                  className="rounded border-navy-700 text-brand-500 focus:ring-0"
+                />
+                Air Conditioned (AC)
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer text-slate-300 hover:text-white">
+                <input
+                  type="checkbox"
+                  checked={Boolean(roomFormData.has_balcony)}
+                  onChange={e => setRoomFormData(prev => ({ ...prev, has_balcony: e.target.checked }))}
+                  className="rounded border-navy-700 text-brand-500 focus:ring-0"
+                />
+                Private Balcony
+              </label>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-end gap-3 pt-3 border-t border-navy-800">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setIsRoomModalOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              onClick={handleSaveRoom}
+            >
+              Save Room Tier
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* PHOTO EDIT MODAL */}
+      <Modal
+        isOpen={isPhotoEditModalOpen}
+        onClose={() => setIsPhotoEditModalOpen(false)}
+        title="Edit Photograph Details"
+        description="Update the caption label and category for this photograph."
+        maxWidth="md"
+      >
+        <div className="space-y-4 py-2">
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 mb-1">
+              Photo Caption / Title
+            </label>
+            <input
+              type="text"
+              value={photoEditName}
+              onChange={e => setPhotoEditName(e.target.value)}
+              placeholder="e.g. Spacious Double Room with Study Desk"
+              className="w-full bg-navy-950 border border-navy-700 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-brand-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 mb-1">
+              Photograph Category
+            </label>
+            <select
+              value={photoEditCategory}
+              onChange={e => setPhotoEditCategory(e.target.value as PhotoCategory)}
+              className="w-full bg-navy-950 border border-navy-700 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-brand-500"
+            >
+              <option value="exterior">Exterior / Building Facade</option>
+              <option value="bedroom">Bedroom &amp; Living</option>
+              <option value="bathroom">Attached Washroom</option>
+              <option value="common_area">Common Area &amp; Lounge</option>
+              <option value="dining">Dining Hall / Food Area</option>
+              <option value="kitchen">Kitchen / Pantry</option>
+              <option value="amenity">Amenities (Gym, Study Room, Laundry)</option>
+              <option value="documents">Certificates / Floor Plan</option>
+            </select>
+          </div>
+
+          <div className="flex items-center justify-end gap-3 pt-3 border-t border-navy-800">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setIsPhotoEditModalOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              onClick={handleSavePhotoEdit}
+            >
+              Save Photo Info
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
     </div>
   );
 };
 
+export default CreateEditListingPage;

@@ -15,7 +15,9 @@ import {
   AlertCircle,
   TrendingUp,
   CreditCard,
-  Trash2
+  Trash2,
+  Clock,
+  GitCompare
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
@@ -356,111 +358,168 @@ export const OwnerListingsPage: React.FC = () => {
             return (
               <div
                 key={item.id}
-                className="bg-navy-900/90 border border-navy-800 rounded-3xl p-5 shadow-xl hover:border-navy-750 transition-all flex flex-col lg:flex-row lg:items-center justify-between gap-5"
+                className="bg-navy-900/90 border border-navy-800 rounded-3xl p-5 shadow-xl hover:border-navy-750 transition-all flex flex-col gap-3.5"
               >
-                {/* Left: Thumbnail & Info */}
-                <div className="flex items-center gap-4">
-                  <img
-                    src={item.images?.[0]?.image_url || 'https://images.unsplash.com/photo-1555854877-bab0e564b8d5?auto=format&fit=crop&w=300&q=80'}
-                    alt={item.name}
-                    className="w-20 h-20 rounded-2xl object-cover border border-navy-750 shrink-0"
-                  />
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5 w-full">
+                  {/* Left: Thumbnail & Info */}
+                  <div className="flex items-center gap-4">
+                    <img
+                      src={item.images?.[0]?.image_url || 'https://images.unsplash.com/photo-1555854877-bab0e564b8d5?auto=format&fit=crop&w=300&q=80'}
+                      alt={item.name}
+                      className="w-20 h-20 rounded-2xl object-cover border border-navy-750 shrink-0"
+                    />
 
-                  <div className="space-y-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant={item.publication_status} size="sm" />
-                      <Badge variant={item.verification_status} size="sm" />
-                      <Badge variant={item.gender_preference} size="sm" />
+                    <div className="space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant={item.publication_status} size="sm" />
+                        <Badge variant={item.verification_status} size="sm" />
+                        <Badge variant={item.gender_preference} size="sm" />
+
+                        {/* Pending Revision Indicator Badge */}
+                        {(item.has_pending_revision || item.pending_revision?.status === 'pending_review') && (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-500/20 text-violet-300 border border-violet-500/40 flex items-center gap-1">
+                            <Clock className="w-3 h-3 text-violet-400 animate-pulse" />
+                            <span>Edits Under Review</span>
+                          </span>
+                        )}
+
+                        {/* Rejected Revision Indicator Badge */}
+                        {item.pending_revision?.status === 'rejected' && (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-500/20 text-red-300 border border-red-500/40 flex items-center gap-1">
+                            <AlertCircle className="w-3 h-3 text-red-400" />
+                            <span>Changes Rejected</span>
+                          </span>
+                        )}
+                      </div>
+                      <h3 className="text-base font-bold text-white">{item.name}</h3>
+                      <p className="text-xs text-slate-400">
+                        {item.address}, {item.locality}, {item.city}
+                      </p>
+                      <p className="text-[11px] text-brand-300 font-semibold">
+                        Rent: ₹{item.min_monthly_rent.toLocaleString('en-IN')} - ₹
+                        {item.max_monthly_rent.toLocaleString('en-IN')} /mo
+                      </p>
                     </div>
-                    <h3 className="text-base font-bold text-white">{item.name}</h3>
-                    <p className="text-xs text-slate-400">
-                      {item.address}, {item.locality}, {item.city}
-                    </p>
-                    <p className="text-[11px] text-brand-300 font-semibold">
-                      Rent: ₹{item.min_monthly_rent.toLocaleString('en-IN')} - ₹
-                      {item.max_monthly_rent.toLocaleString('en-IN')} /mo
-                    </p>
+                  </div>
+
+                  {/* Middle: Live Room & Bed Capacity */}
+                  <div className="flex items-center gap-6 text-xs text-slate-300 px-4 py-3 bg-navy-950/80 rounded-2xl border border-navy-850 shrink-0">
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-slate-400 block">Total Beds</span>
+                      <span className="text-base font-black text-white">{totalCapacity}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-slate-400 block">Available</span>
+                      <span className="text-base font-black text-emerald-400">{availableBeds}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-slate-400 block">Rooms</span>
+                      <span className="text-base font-black text-brand-300">{item.rooms.length}</span>
+                    </div>
+                  </div>
+
+                  {/* Right: Actions */}
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    <Link to={`/owner/listings/${item.id}/rooms`}>
+                      <Button variant="secondary" size="sm" leftIcon={<BedDouble className="w-3.5 h-3.5" />}>
+                        Beds
+                      </Button>
+                    </Link>
+
+                    <Link to={`/owner/listings/${item.id}/edit`}>
+                      <Button variant="secondary" size="sm" leftIcon={<Edit className="w-3.5 h-3.5" />}>
+                        Edit Property
+                      </Button>
+                    </Link>
+
+                    <Link to={`/pgs/${item.id}`} target="_blank">
+                      <Button variant="ghost" size="sm" title="Preview public view">
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </Button>
+                    </Link>
+
+                    {item.publication_status === 'published' ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleTogglePause(item)}
+                        title="Pause listing visibility"
+                        leftIcon={<Pause className="w-3.5 h-3.5 text-amber-400" />}
+                      >
+                        Pause
+                      </Button>
+                    ) : item.publication_status === 'paused' ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleTogglePause(item)}
+                        title="Resume listing visibility"
+                        leftIcon={<Play className="w-3.5 h-3.5 text-emerald-400" />}
+                      >
+                        Resume
+                      </Button>
+                    ) : item.publication_status === 'draft' ? (
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        onClick={() => handleSubmitForReview(item)}
+                      >
+                        Submit
+                      </Button>
+                    ) : null}
+
+                    {/* Delete Button */}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setListingToDelete(item)}
+                      title="Delete property from website and database"
+                      className="text-red-400 hover:text-red-300 hover:bg-red-500/10 border border-transparent hover:border-red-500/20"
+                      leftIcon={<Trash2 className="w-3.5 h-3.5" />}
+                    >
+                      Delete
+                    </Button>
                   </div>
                 </div>
 
-                {/* Middle: Live Room & Bed Capacity */}
-                <div className="flex items-center gap-6 text-xs text-slate-300 px-4 py-3 bg-navy-950/80 rounded-2xl border border-navy-850 shrink-0">
-                  <div>
-                    <span className="text-[10px] uppercase font-bold text-slate-400 block">Total Beds</span>
-                    <span className="text-base font-black text-white">{totalCapacity}</span>
+                {/* Banner 1: Pending revision notice */}
+                {(item.has_pending_revision || item.pending_revision?.status === 'pending_review') && (
+                  <div className="w-full p-3.5 rounded-2xl bg-violet-500/10 border border-violet-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-violet-200">
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck className="w-4 h-4 text-violet-400 shrink-0" />
+                      <span>
+                        <strong>Edits Under Admin Review:</strong> Proposed changes submitted on {item.pending_revision ? new Date(item.pending_revision.submission_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'recently'}. {item.publication_status === 'published' ? 'Your approved live version remains visible to students until admin approves the update.' : 'Your listing will be published once approved.'}
+                      </span>
+                    </div>
+                    <Link to={`/owner/listings/${item.id}/edit`} className="shrink-0">
+                      <Button variant="ghost" size="sm" className="text-violet-300 hover:text-white border border-violet-500/30">
+                        View / Update Edits
+                      </Button>
+                    </Link>
                   </div>
-                  <div>
-                    <span className="text-[10px] uppercase font-bold text-slate-400 block">Available</span>
-                    <span className="text-base font-black text-emerald-400">{availableBeds}</span>
+                )}
+
+                {/* Banner 2: Rejected notice with admin feedback */}
+                {(item.pending_revision?.status === 'rejected' || (item.publication_status === 'rejected' && (item.rejection_reason || item.verification_notes))) && (
+                  <div className="w-full p-3.5 rounded-2xl bg-red-500/10 border border-red-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-red-200">
+                    <div className="flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-bold text-red-300">
+                          {item.pending_revision?.status === 'rejected' ? 'Proposed Changes Rejected — Action Required:' : 'Listing Verification Rejected — Action Required:'}
+                        </p>
+                        <p className="text-[11px] text-slate-300 mt-0.5">
+                          "{item.pending_revision?.rejection_reason || item.rejection_reason || item.verification_notes || 'Please adjust the requested details and resubmit for verification.'}"
+                        </p>
+                      </div>
+                    </div>
+                    <Link to={`/owner/listings/${item.id}/edit`} className="shrink-0">
+                      <Button variant="danger" size="sm">
+                        Edit &amp; Resubmit
+                      </Button>
+                    </Link>
                   </div>
-                  <div>
-                    <span className="text-[10px] uppercase font-bold text-slate-400 block">Rooms</span>
-                    <span className="text-base font-black text-brand-300">{item.rooms.length}</span>
-                  </div>
-                </div>
-
-                {/* Right: Actions */}
-                <div className="flex flex-wrap items-center gap-2 shrink-0">
-                  <Link to={`/owner/listings/${item.id}/rooms`}>
-                    <Button variant="secondary" size="sm" leftIcon={<BedDouble className="w-3.5 h-3.5" />}>
-                      Beds
-                    </Button>
-                  </Link>
-
-                  <Link to={`/owner/listings/${item.id}/edit`}>
-                    <Button variant="secondary" size="sm" leftIcon={<Edit className="w-3.5 h-3.5" />}>
-                      Edit
-                    </Button>
-                  </Link>
-
-                  <Link to={`/pgs/${item.id}`} target="_blank">
-                    <Button variant="ghost" size="sm" title="Preview public view">
-                      <ExternalLink className="w-3.5 h-3.5" />
-                    </Button>
-                  </Link>
-
-                  {item.publication_status === 'published' ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleTogglePause(item)}
-                      title="Pause listing visibility"
-                      leftIcon={<Pause className="w-3.5 h-3.5 text-amber-400" />}
-                    >
-                      Pause
-                    </Button>
-                  ) : item.publication_status === 'paused' ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleTogglePause(item)}
-                      title="Resume listing visibility"
-                      leftIcon={<Play className="w-3.5 h-3.5 text-emerald-400" />}
-                    >
-                      Resume
-                    </Button>
-                  ) : item.publication_status === 'draft' ? (
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      onClick={() => handleSubmitForReview(item)}
-                    >
-                      Submit
-                    </Button>
-                  ) : null}
-
-                  {/* Delete Button */}
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setListingToDelete(item)}
-                    title="Delete property from website and database"
-                    className="text-red-400 hover:text-red-300 hover:bg-red-500/10 border border-transparent hover:border-red-500/20"
-                    leftIcon={<Trash2 className="w-3.5 h-3.5" />}
-                  >
-                    Delete
-                  </Button>
-                </div>
+                )}
               </div>
             );
           })}

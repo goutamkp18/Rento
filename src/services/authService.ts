@@ -383,6 +383,153 @@ export const authService = {
     return profile;
   },
 
+  /**
+   * Request Email OTP from Supabase Auth
+   * Uses Brevo SMTP configured in Supabase to dispatch a 6-digit OTP code
+   */
+  async sendEmailOtp(email: string): Promise<{ success: boolean; message: string }> {
+    if (!isSupabaseConfigured || !supabase) {
+      throw new Error('Supabase database connection is not configured.');
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      throw new Error('Please enter a valid email address.');
+    }
+
+    const { error } = await supabase.auth.signInWithOtp({
+      email: cleanEmail,
+      options: {
+        shouldCreateUser: true,
+      },
+    });
+
+    if (error) {
+      if (error.message?.includes('rate limit') || (error as any).status === 429) {
+        throw new Error('Email OTP rate limit exceeded. Please wait a few moments before requesting another code.');
+      }
+      if (
+        error.message?.includes('Error sending confirmation email') ||
+        error.message?.includes('Error sending magic link email') ||
+        error.message?.includes('unexpected_failure') ||
+        (error as any).status === 500
+      ) {
+        throw new Error(
+          'Supabase SMTP Dispatch Error: Supabase was unable to send the email via Brevo. Please check your Brevo SMTP settings in Supabase Dashboard (Settings -> Authentication -> SMTP Settings).'
+        );
+      }
+      throw new Error(error.message || 'Failed to dispatch verification code. Please try again.');
+    }
+
+    return {
+      success: true,
+      message: `A 6-digit verification code has been dispatched to ${cleanEmail}.`,
+    };
+  },
+
+  /**
+   * Verify the 6-digit OTP code using Supabase Auth
+   * On success, establishes Supabase session and returns synchronized UserProfile
+   */
+  async verifyEmailOtp(
+    email: string,
+    token: string,
+    requestedRole?: UserRole
+  ): Promise<UserProfile> {
+    if (!isSupabaseConfigured || !supabase) {
+      throw new Error('Supabase database connection is not configured.');
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanToken = token.trim();
+
+    if (!cleanEmail || !cleanToken) {
+      throw new Error('Please enter both your email address and the 6-digit verification code.');
+    }
+
+    const { data, error } = await supabase.auth.verifyOtp({
+      email: cleanEmail,
+      token: cleanToken,
+      type: 'email',
+    });
+
+    if (error) {
+      throw new Error(error.message || 'Invalid or expired verification code. Please check your email or request a new code.');
+    }
+
+    if (!data.user) {
+      throw new Error('Authentication failed. No active user session returned by Supabase.');
+    }
+
+    // 1. Check if user already exists in public.profiles table
+    let existingProfile: UserProfile | null = null;
+    try {
+      const { data: profileRow } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', data.user.id)
+        .maybeSingle();
+
+      if (profileRow) {
+        existingProfile = profileRow as UserProfile;
+      }
+    } catch (e) {
+      console.warn('Profile fetch notice after OTP verification:', e);
+    }
+
+    let profile: UserProfile;
+
+    if (existingProfile) {
+      // PRESERVE EXISTING ROLE AND PROFILE DATA
+      // Under no circumstance escalate or alter an existing role arbitrarily
+      profile = existingProfile;
+    } else {
+      // NEW USER REGISTERING VIA OTP
+      // Requirement 11: Do not automatically grant PG-owner or admin privileges to a newly registered user.
+      // Default to 'student'. If requested role is explicitly 'owner', assign 'owner' (NEVER 'admin').
+      let assignedRole: UserRole = 'student';
+      if (requestedRole === 'owner') {
+        assignedRole = 'owner';
+      }
+
+      profile = {
+        id: data.user.id,
+        email: data.user.email || cleanEmail,
+        full_name: data.user.user_metadata?.full_name || cleanEmail.split('@')[0],
+        role: assignedRole,
+        phone: data.user.user_metadata?.phone || '',
+        created_at: data.user.created_at || new Date().toISOString(),
+      };
+
+      try {
+        const { data: inserted } = await supabase
+          .from('profiles')
+          .upsert(
+            {
+              id: profile.id,
+              email: profile.email,
+              full_name: profile.full_name,
+              role: profile.role,
+              phone: profile.phone,
+            },
+            { onConflict: 'id' }
+          )
+          .select('*')
+          .single();
+
+        if (inserted) {
+          profile = inserted as UserProfile;
+        }
+      } catch (pErr) {
+        console.warn('Profile sync notice after OTP verification:', pErr);
+      }
+    }
+
+    saveStoredUser(profile);
+    (profile as any).isNewUser = !existingProfile;
+    return profile;
+  },
+
 
   async updateProfile(updates: Partial<UserProfile>): Promise<UserProfile> {
     const current = getStoredUser();
