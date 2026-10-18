@@ -1,6 +1,6 @@
-import { PGListing, FilterState, ListingPublicationStatus, ListingVerificationStatus, ListingRevision, RevisionStatus } from '../types';
+import { PGListing, FilterState, ListingPublicationStatus, ListingVerificationStatus, ListingRevision, RevisionStatus, UserProfile, UserRole } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { authService } from './authService';
+import { authService, getStoredUser } from './authService';
 import { subscriptionService } from './subscriptionService';
 import { storageService } from './storageService';
 import { auditService } from './auditService';
@@ -217,7 +217,7 @@ export const listingsService = {
   },
 
 
-  async createListing(listingData: Partial<PGListing>): Promise<PGListing> {
+  async createListing(listingData: Partial<PGListing>, callerUser?: UserProfile | null): Promise<PGListing> {
     let resolvedOwnerId = '';
     let ownerName = listingData.owner_name || '';
     let ownerEmail = listingData.owner_email || '';
@@ -225,70 +225,82 @@ export const listingsService = {
     let ownerType = listingData.owner_type || 'individual';
     let businessName = listingData.business_name || '';
 
-    // Verify authenticated user directly from Supabase session
+    let currentUser = callerUser || authService.getCurrentUser() || getStoredUser();
+
+    // Verify authenticated user directly from Supabase session if available
     if (isSupabaseConfigured && supabase) {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const sessionUser = sessionData.session?.user;
-
-      let authUser = sessionUser;
-      if (!authUser) {
-        const { data: userData, error: authErr } = await supabase.auth.getUser();
-        if (authErr || !userData.user) {
-          throw new Error('Your session has expired or is not authenticated in Supabase. Please sign in again.');
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        let authUser: any = sessionData.session?.user;
+        if (!authUser) {
+          const { data: userData } = await supabase.auth.getUser();
+          authUser = userData?.user;
         }
-        authUser = userData.user;
-      }
 
-      // Verify profile from profiles table
-      const { data: profile, error: pErr } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', authUser.id)
-        .maybeSingle();
+        if (authUser) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', authUser.id)
+            .maybeSingle();
 
-      if (pErr || !profile) {
-        throw new Error('Could not find your owner profile in the database. Please sign in or complete owner registration.');
-      }
+          resolvedOwnerId = authUser.id;
+          ownerName = profile?.full_name || authUser.email?.split('@')[0] || ownerName;
+          ownerEmail = authUser.email || profile?.email || ownerEmail;
+          ownerPhone = profile?.phone || ownerPhone;
+          ownerType = profile?.owner_type || ownerType;
+          businessName = profile?.business_name || businessName;
 
-      if (profile.role !== 'owner' && profile.role !== 'admin') {
-        throw new Error('Access Denied: Only registered PG Owners can create listings.');
+          currentUser = {
+            id: authUser.id,
+            email: ownerEmail,
+            full_name: ownerName,
+            role: profile?.role || (authUser.app_metadata?.role as UserRole) || 'owner',
+            phone: ownerPhone,
+            owner_type: ownerType,
+            business_name: businessName,
+            created_at: authUser.created_at || new Date().toISOString(),
+          };
+          authService.saveSession(currentUser);
+        }
+      } catch (authErr) {
+        console.warn('Supabase auth check notice in createListing:', authErr);
       }
+    }
 
-      resolvedOwnerId = authUser.id;
-      ownerName = profile.full_name || authUser.email?.split('@')[0] || '';
-      ownerEmail = authUser.email || profile.email || '';
-      ownerPhone = profile.phone || '';
-      ownerType = profile.owner_type || 'individual';
-      businessName = profile.business_name || '';
-    } else {
-      const currentUser = authService.getCurrentUser();
-      if (!currentUser) {
-        throw new Error('Authentication required to create a property listing.');
-      }
-      if (currentUser.role !== 'owner' && currentUser.role !== 'admin') {
-        throw new Error('Unauthorized: Only registered PG Owners can create listings.');
-      }
+    if (!resolvedOwnerId && currentUser) {
       resolvedOwnerId = currentUser.id;
-      ownerName = currentUser.full_name;
-      ownerEmail = currentUser.email;
-      ownerPhone = currentUser.phone || '';
-      ownerType = currentUser.owner_type || 'individual';
-      businessName = currentUser.business_name || '';
+      ownerName = ownerName || currentUser.full_name;
+      ownerEmail = ownerEmail || currentUser.email;
+      ownerPhone = ownerPhone || currentUser.phone || '';
+      ownerType = ownerType || currentUser.owner_type || 'individual';
+      businessName = businessName || currentUser.business_name || '';
     }
 
-    // Enforce subscription listing limit for owners
-    const ownerListings = await this.getOwnerListings(resolvedOwnerId);
-    const capacityCheck = await subscriptionService.checkListingCapacity(resolvedOwnerId, ownerListings.length);
-
-    if (!capacityCheck.hasActiveSubscription) {
-      throw new Error('Active PG Owner subscription required before creating property listings.');
+    if (!resolvedOwnerId) {
+      throw new Error('Authentication required to create a property listing. Please sign in.');
     }
 
-    if (!capacityCheck.canAdd) {
-      throw new Error(
-        capacityCheck.reason ||
-          `Subscription listing limit reached (${ownerListings.length}/${capacityCheck.limit}). Please upgrade your plan to register additional properties.`
-      );
+    if (currentUser && currentUser.role !== 'owner' && currentUser.role !== 'admin') {
+      throw new Error('Access Denied: Only registered PG Owners can create listings.');
+    }
+
+    // Enforce subscription listing limit for owners (Admins bypass capacity constraints)
+    const isAdmin = currentUser?.role === 'admin' || (await authService.verifyAdminPrivileges(currentUser));
+    if (!isAdmin) {
+      const ownerListings = await this.getOwnerListings(resolvedOwnerId);
+      const capacityCheck = await subscriptionService.checkListingCapacity(resolvedOwnerId, ownerListings.length);
+
+      if (!capacityCheck.hasActiveSubscription) {
+        throw new Error('Active PG Owner subscription required before creating property listings.');
+      }
+
+      if (!capacityCheck.canAdd) {
+        throw new Error(
+          capacityCheck.reason ||
+            `Subscription listing limit reached (${ownerListings.length}/${capacityCheck.limit}). Please upgrade your plan to register additional properties.`
+        );
+      }
     }
 
     const newListing: PGListing = {
@@ -375,12 +387,36 @@ export const listingsService = {
       verification_status: newListing.verification_status,
     };
 
-    let { error: listingErr } = await supabase.from('pg_listings').insert([insertPayload]);
+    let listingErr: any = null;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const res = await supabase.from('pg_listings').insert([insertPayload]);
+      listingErr = res.error;
+      if (!listingErr) break;
 
-    if (listingErr && listingErr.message?.includes('google_maps_url')) {
-      delete insertPayload.google_maps_url;
-      const retry = await supabase.from('pg_listings').insert([insertPayload]);
-      listingErr = retry.error;
+      const missingColMatch =
+        listingErr.message?.match(/Could not find the '([^']+)' column of 'pg_listings'/i) ||
+        listingErr.message?.match(/column "([^"]+)" of relation "pg_listings" does not exist/i) ||
+        listingErr.message?.match(/column pg_listings\.([^ ]+) does not exist/i);
+
+      if (missingColMatch && missingColMatch[1]) {
+        console.warn(`[Auto-Recovery] Removing missing column '${missingColMatch[1]}' from pg_listings insert payload and retrying.`);
+        delete insertPayload[missingColMatch[1]];
+        continue;
+      }
+
+      if (listingErr.message?.includes('google_maps_url')) {
+        delete insertPayload.google_maps_url;
+        continue;
+      }
+      if (listingErr.message?.includes('business_name')) {
+        delete insertPayload.business_name;
+        continue;
+      }
+      if (listingErr.message?.includes('owner_type')) {
+        delete insertPayload.owner_type;
+        continue;
+      }
+      break;
     }
 
     if (listingErr) {
@@ -459,8 +495,51 @@ export const listingsService = {
     }
   },
 
-  async updateListing(id: string, updates: Partial<PGListing>): Promise<PGListing> {
-    const currentUser = authService.getCurrentUser();
+  async updateListing(
+    id: string,
+    updates: Partial<PGListing>,
+    callerUser?: UserProfile | null
+  ): Promise<PGListing> {
+    let currentUser = callerUser || authService.getCurrentUser();
+
+    // Fallback: If not found in localStorage, verify directly from active Supabase session
+    if (!currentUser && isSupabaseConfigured && supabase) {
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        let authUser: any = sessionData.session?.user;
+        if (!authUser) {
+          const { data: userData } = await supabase.auth.getUser();
+          authUser = userData?.user;
+        }
+
+        if (authUser) {
+          const { data: prof } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', authUser.id)
+            .maybeSingle();
+
+          currentUser = {
+            id: authUser.id,
+            email: authUser.email || prof?.email || '',
+            full_name: prof?.full_name || authUser.email?.split('@')[0] || 'User',
+            role: prof?.role || (authUser.app_metadata?.role as UserRole) || 'owner',
+            phone: prof?.phone || '',
+            owner_type: prof?.owner_type,
+            business_name: prof?.business_name,
+            created_at: prof?.created_at || authUser.created_at || new Date().toISOString(),
+          };
+          authService.saveSession(currentUser);
+        }
+      } catch (authErr) {
+        console.warn('Fallback user resolution notice in updateListing:', authErr);
+      }
+    }
+
+    if (!currentUser) {
+      currentUser = getStoredUser();
+    }
+
     if (!currentUser) {
       throw new Error('Authentication required to modify property listings.');
     }
@@ -484,7 +563,12 @@ export const listingsService = {
       if (updates.verification_status && updates.verification_status !== existing.verification_status) {
         throw new Error('Unauthorized: Only administrators can modify property verification status.');
       }
-      if (updates.publication_status === 'published' && existing.publication_status !== 'published') {
+      // Allow owners to resume their own paused listings without re-review
+      if (
+        updates.publication_status === 'published' &&
+        existing.publication_status !== 'published' &&
+        existing.publication_status !== 'paused'
+      ) {
         throw new Error('Unauthorized: Listings require administrator approval to be published.');
       }
     }
@@ -595,16 +679,21 @@ export const listingsService = {
   },
 
 
-  async updateListingStatus(id: string, status: ListingPublicationStatus): Promise<PGListing> {
-    return this.updateListing(id, { publication_status: status });
+  async updateListingStatus(
+    id: string,
+    status: ListingPublicationStatus,
+    callerUser?: UserProfile | null
+  ): Promise<PGListing> {
+    return this.updateListing(id, { publication_status: status }, callerUser);
   },
 
   async updateListingVerification(
     id: string,
     status: ListingVerificationStatus,
-    notes?: string
+    notes?: string,
+    callerUser?: UserProfile | null
   ): Promise<PGListing> {
-    const isAdmin = await authService.verifyAdminPrivileges();
+    const isAdmin = await authService.verifyAdminPrivileges(callerUser);
     if (!isAdmin) {
       throw new Error('Unauthorized: Administrator privileges required to modify verification status.');
     }
@@ -614,11 +703,11 @@ export const listingsService = {
       verification_notes: notes,
       verified_at: status === 'verified' ? new Date().toISOString() : undefined,
     };
-    return this.updateListing(id, updates);
+    return this.updateListing(id, updates, callerUser);
   },
 
-  async getAdminPendingListings(): Promise<PGListing[]> {
-    const isAdmin = await authService.verifyAdminPrivileges();
+  async getAdminPendingListings(callerUser?: UserProfile | null): Promise<PGListing[]> {
+    const isAdmin = await authService.verifyAdminPrivileges(callerUser);
     if (!isAdmin) {
       throw new Error('Unauthorized: Administrator privileges required to access the moderation review queue.');
     }
@@ -633,8 +722,8 @@ export const listingsService = {
     );
   },
 
-  async getAllListingsForAdmin(): Promise<PGListing[]> {
-    const isAdmin = await authService.verifyAdminPrivileges();
+  async getAllListingsForAdmin(callerUser?: UserProfile | null): Promise<PGListing[]> {
+    const isAdmin = await authService.verifyAdminPrivileges(callerUser);
     if (!isAdmin) {
       throw new Error('Unauthorized: Administrator privileges required to access all listings.');
     }
@@ -645,8 +734,22 @@ export const listingsService = {
   /**
    * Delete a listing completely from both Supabase database and storage
    */
-  async deleteListing(id: string): Promise<boolean> {
-    const currentUser = authService.getCurrentUser();
+  async deleteListing(id: string, callerUser?: UserProfile | null): Promise<boolean> {
+    let currentUser = callerUser || authService.getCurrentUser() || getStoredUser();
+    if (!currentUser && isSupabaseConfigured && supabase) {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          currentUser = {
+            id: session.user.id,
+            email: session.user.email || '',
+            full_name: session.user.email?.split('@')[0] || 'User',
+            role: (session.user.app_metadata?.role as UserRole) || 'owner',
+            created_at: session.user.created_at || new Date().toISOString(),
+          };
+        }
+      } catch {}
+    }
     if (!currentUser) {
       throw new Error('Authentication required to delete a property listing.');
     }
@@ -769,8 +872,8 @@ export const listingsService = {
   /**
    * Admin: Get all pending property revisions awaiting review with current live details
    */
-  async getAllPendingRevisionsForAdmin(): Promise<(ListingRevision & { listing?: PGListing })[]> {
-    const isAdmin = await authService.verifyAdminPrivileges();
+  async getAllPendingRevisionsForAdmin(callerUser?: UserProfile | null): Promise<(ListingRevision & { listing?: PGListing })[]> {
+    const isAdmin = await authService.verifyAdminPrivileges(callerUser);
     if (!isAdmin) {
       throw new Error('Unauthorized: Administrator privileges required to access listing revisions.');
     }
@@ -814,9 +917,10 @@ export const listingsService = {
    */
   async saveListingDraft(
     listingId: string,
-    proposedChanges: Partial<PGListing>
+    proposedChanges: Partial<PGListing>,
+    callerUser?: UserProfile | null
   ): Promise<{ listing: PGListing; revision?: ListingRevision }> {
-    const currentUser = authService.getCurrentUser();
+    const currentUser = callerUser || authService.getCurrentUser() || getStoredUser();
     if (!currentUser) {
       throw new Error('Authentication required to save draft.');
     }
@@ -836,7 +940,7 @@ export const listingsService = {
       const updated = await this.updateListing(listingId, {
         ...proposedChanges,
         publication_status: 'draft',
-      });
+      }, currentUser);
       return { listing: updated };
     }
 
@@ -887,9 +991,10 @@ export const listingsService = {
    */
   async submitListingChangesForVerification(
     listingId: string,
-    proposedChanges: Partial<PGListing>
+    proposedChanges: Partial<PGListing>,
+    callerUser?: UserProfile | null
   ): Promise<{ listing: PGListing; revision?: ListingRevision }> {
-    const currentUser = authService.getCurrentUser();
+    const currentUser = callerUser || authService.getCurrentUser() || getStoredUser();
     if (!currentUser) {
       throw new Error('Authentication required to submit changes for verification.');
     }
@@ -910,7 +1015,7 @@ export const listingsService = {
         ...proposedChanges,
         publication_status: 'pending_review',
         verification_status: 'pending_verification',
-      });
+      }, currentUser);
       return { listing: updated };
     }
 
@@ -974,8 +1079,12 @@ export const listingsService = {
   /**
    * Admin: Approve a pending property revision and atomically update live public listing
    */
-  async approveRevision(revisionId: string, reviewerId?: string): Promise<PGListing> {
-    const isAdmin = await authService.verifyAdminPrivileges();
+  async approveRevision(
+    revisionId: string,
+    reviewerId?: string,
+    callerUser?: UserProfile | null
+  ): Promise<PGListing> {
+    const isAdmin = await authService.verifyAdminPrivileges(callerUser);
     if (!isAdmin) {
       throw new Error('Unauthorized: Administrator privileges required to approve revisions.');
     }
@@ -1005,7 +1114,7 @@ export const listingsService = {
 
     const listingId = revision.listing_id;
     const changes = revision.proposed_changes;
-    const currentAdmin = authService.getCurrentUser();
+    const currentAdmin = callerUser || authService.getCurrentUser() || getStoredUser();
     const effectiveReviewer = reviewerId || currentAdmin?.id || 'usr_admin_ops';
     const approvalTimestamp = new Date().toISOString();
 
@@ -1058,7 +1167,7 @@ export const listingsService = {
         }
       }
 
-      await this.updateListing(listingId, payloadToUpdate);
+      await this.updateListing(listingId, payloadToUpdate, callerUser || currentAdmin);
 
       // Apply rooms if present in changes
       if (changes.rooms && Array.isArray(changes.rooms) && changes.rooms.length > 0) {
@@ -1147,8 +1256,13 @@ export const listingsService = {
   /**
    * Admin: Reject a proposed property revision with mandatory feedback for the owner
    */
-  async rejectRevision(revisionId: string, rejectionReason: string, reviewerId?: string): Promise<ListingRevision> {
-    const isAdmin = await authService.verifyAdminPrivileges();
+  async rejectRevision(
+    revisionId: string,
+    rejectionReason: string,
+    reviewerId?: string,
+    callerUser?: UserProfile | null
+  ): Promise<ListingRevision> {
+    const isAdmin = await authService.verifyAdminPrivileges(callerUser);
     if (!isAdmin) {
       throw new Error('Unauthorized: Administrator privileges required to reject revisions.');
     }

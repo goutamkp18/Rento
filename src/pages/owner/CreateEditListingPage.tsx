@@ -923,7 +923,7 @@ export const CreateEditListingPage: React.FC = () => {
         if (publishForReview) {
           // Submit proposed edits to admin review queue
           setUploadStatusText('Submitting proposed changes to admin verification queue...');
-          const result = await listingsService.submitListingChangesForVerification(id, listingPayload);
+          const result = await listingsService.submitListingChangesForVerification(id, listingPayload, user);
           if (result.revision) {
             setActiveRevision(result.revision);
           }
@@ -936,7 +936,7 @@ export const CreateEditListingPage: React.FC = () => {
         } else {
           // Save draft of unfinished edits
           setUploadStatusText('Saving draft edits...');
-          const result = await listingsService.saveListingDraft(id, listingPayload);
+          const result = await listingsService.saveListingDraft(id, listingPayload, user);
           if (result.revision) {
             setActiveRevision(result.revision);
           }
@@ -953,7 +953,7 @@ export const CreateEditListingPage: React.FC = () => {
         listingPayload.publication_status = publishForReview ? 'pending_review' : 'draft';
         listingPayload.verification_status = publishForReview ? 'pending_verification' : 'owner_submitted';
 
-        const savedListing = await listingsService.createListing(listingPayload);
+        const savedListing = await listingsService.createListing(listingPayload, user);
         const actualListingId = savedListing.id || targetListingId;
 
         // Save image metadata rows

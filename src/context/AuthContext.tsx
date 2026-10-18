@@ -51,7 +51,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           .maybeSingle();
 
         if (profile) {
-          return {
+          const userProfile = {
             id: authUser.id,
             email: authUser.email || profile.email,
             full_name: profile.full_name || authUser.email?.split('@')[0] || 'User',
@@ -66,6 +66,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             avatar_url: profile.avatar_url,
             created_at: profile.created_at || authUser.created_at || new Date().toISOString(),
           } as UserProfile;
+          if (userProfile.role === 'admin') {
+            authService.issueAdminSessionToken();
+          }
+          return userProfile;
         }
 
         // Fallback for immediate sign-in before profile row is fetched or for newly created OTP users
@@ -94,6 +98,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (session?.user) {
             const profile = await loadProfileForUser(session.user);
             if (isMounted && profile) {
+              authService.saveSession(profile);
               setUser(profile);
               setIsLoading(false);
               return;
@@ -129,6 +134,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (session?.user) {
             const profile = await loadProfileForUser(session.user);
             if (isMounted && profile) {
+              authService.saveSession(profile);
               setUser(profile);
             }
           }

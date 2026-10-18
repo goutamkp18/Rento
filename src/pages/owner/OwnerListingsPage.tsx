@@ -64,7 +64,7 @@ export const OwnerListingsPage: React.FC = () => {
     const newStatus: ListingPublicationStatus =
       listing.publication_status === 'published' ? 'paused' : 'published';
 
-    await listingsService.updateListingStatus(listing.id, newStatus);
+    await listingsService.updateListingStatus(listing.id, newStatus, user);
     setListings(prev =>
       prev.map(l => (l.id === listing.id ? { ...l, publication_status: newStatus } : l))
     );
@@ -78,7 +78,7 @@ export const OwnerListingsPage: React.FC = () => {
   };
 
   const handleSubmitForReview = async (listing: PGListing) => {
-    await listingsService.updateListingStatus(listing.id, 'under_review');
+    await listingsService.updateListingStatus(listing.id, 'under_review', user);
     // Start trial countdown if first review submission
     try {
       await startTrialOnFirstListing();

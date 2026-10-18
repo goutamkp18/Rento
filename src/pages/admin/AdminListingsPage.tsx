@@ -59,8 +59,8 @@ export const AdminListingsPage: React.FC = () => {
     setIsLoading(true);
     try {
       const [allListings, allRevisions] = await Promise.all([
-        listingsService.getAllListingsForAdmin(),
-        listingsService.getAllPendingRevisionsForAdmin(),
+        listingsService.getAllListingsForAdmin(user),
+        listingsService.getAllPendingRevisionsForAdmin(user),
       ]);
 
       setListings(allListings);
@@ -97,7 +97,7 @@ export const AdminListingsPage: React.FC = () => {
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [user]);
 
   // Filter listings for tabs
   const newSubmissions = listings.filter(
@@ -109,7 +109,7 @@ export const AdminListingsPage: React.FC = () => {
     if (!revId) return;
     setIsProcessing(true);
     try {
-      const updatedListing = await listingsService.approveRevision(revId, user?.id);
+      const updatedListing = await listingsService.approveRevision(revId, user?.id, user);
 
       showToast({
         type: 'success',
@@ -130,7 +130,7 @@ export const AdminListingsPage: React.FC = () => {
     if (!selectedRevision || !rejectRevisionReason.trim()) return;
     setIsProcessing(true);
     try {
-      await listingsService.rejectRevision(selectedRevision.id, rejectRevisionReason.trim(), user?.id);
+      await listingsService.rejectRevision(selectedRevision.id, rejectRevisionReason.trim(), user?.id, user);
 
       showToast({
         type: 'info',
@@ -151,7 +151,7 @@ export const AdminListingsPage: React.FC = () => {
   // 3. APPROVE NEW LISTING PUBLICATION
   const handleApprovePublication = async (listingId: string) => {
     try {
-      const updated = await listingsService.updateListingStatus(listingId, 'published');
+      const updated = await listingsService.updateListingStatus(listingId, 'published', user);
       setListings(prev => prev.map(l => (l.id === listingId ? updated : l)));
       if (selectedListing?.id === listingId) setSelectedListing(updated);
 
@@ -181,7 +181,7 @@ export const AdminListingsPage: React.FC = () => {
         publication_status: 'rejected',
         verification_notes: `Rejection notice: ${rejectReason.trim()}`,
         rejection_reason: rejectReason.trim(),
-      });
+      }, user);
 
       setListings(prev => prev.map(l => (l.id === updated.id ? updated : l)));
       setSelectedListing(updated);
@@ -214,7 +214,7 @@ export const AdminListingsPage: React.FC = () => {
   ) => {
     try {
       const notes = verifyNotes.trim() || 'Physical inspection and safety audit completed.';
-      const updated = await listingsService.updateListingVerification(listingId, status, notes);
+      const updated = await listingsService.updateListingVerification(listingId, status, notes, user);
 
       setListings(prev => prev.map(l => (l.id === listingId ? updated : l)));
       if (selectedListing?.id === listingId) setSelectedListing(updated);
