@@ -156,3 +156,62 @@ export function formatListingLimit(limit: number): string {
   }
   return `Up to ${limit} PGs`;
 }
+
+export interface PlanPaymentDetails {
+  planId: string;
+  name: string;
+  userType: 'student' | 'owner';
+  amountRupees: number;
+  amountPaise: number;
+  qrCodeUrl: string;
+  upiId: string;
+  description: string;
+}
+
+export const PLAN_PAYMENT_CONFIG: Record<string, PlanPaymentDetails> = {
+  student_pass: {
+    planId: 'student_pass',
+    name: 'Student Lifetime Access Pass',
+    userType: 'student',
+    amountRupees: 9,
+    amountPaise: 900,
+    qrCodeUrl: '/qr/qr_student_9.jpg',
+    upiId: 'gangadhar.66@superyes',
+    description: 'Lifetime access to PG comparisons, booking, direct messaging & live Google Maps addresses.',
+  },
+  basic: {
+    planId: 'basic',
+    name: 'Starter Plan (1 PG)',
+    userType: 'owner',
+    amountRupees: 49,
+    amountPaise: 4900,
+    qrCodeUrl: '/qr/qr_owner_basic_49.jpg',
+    upiId: 'rento.owners@icici',
+    description: 'Monthly subscription to manage 1 active PG accommodation.',
+  },
+  pro: {
+    planId: 'pro',
+    name: 'Pro Plan (Up to 3 PGs)',
+    userType: 'owner',
+    amountRupees: 99,
+    amountPaise: 9900,
+    qrCodeUrl: '/qr/qr_owner_pro_99.jpg',
+    upiId: 'rento.owners@icici',
+    description: 'Monthly subscription to manage up to 3 PG accommodations.',
+  },
+  pro_plus: {
+    planId: 'pro_plus',
+    name: 'Pro Plus Plan (Unlimited PGs)',
+    userType: 'owner',
+    amountRupees: 199,
+    amountPaise: 19900,
+    qrCodeUrl: '/qr/qr_owner_pro_plus_199.jpg',
+    upiId: 'rento.owners@icici',
+    description: 'Enterprise monthly plan with unlimited accommodations and priority support.',
+  },
+};
+
+export function getPlanPaymentConfig(planId: string): PlanPaymentDetails {
+  return PLAN_PAYMENT_CONFIG[planId] || PLAN_PAYMENT_CONFIG.student_pass;
+}
+

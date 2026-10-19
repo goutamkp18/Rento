@@ -2,11 +2,13 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { useAuth } from './AuthContext';
 import { studentSubscriptionService } from '../services/studentSubscriptionService';
 import { StudentPaywallModal } from '../components/subscription/StudentPaywallModal';
-import { StudentSubscription } from '../types';
+import { StudentSubscription, PaymentRequest } from '../types';
 
 interface StudentSubscriptionContextType {
   hasStudentSubscription: boolean;
   studentSubscription: StudentSubscription | null;
+  pendingPayment: PaymentRequest | null;
+  rejectedPayment: PaymentRequest | null;
   isLoading: boolean;
   openPaywall: (reason?: string, onSuccess?: () => void) => void;
   closePaywall: () => void;
@@ -17,50 +19,57 @@ const StudentSubscriptionContext = createContext<StudentSubscriptionContextType 
 
 export const StudentSubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
-  
-  // Synchronous initial check so there is zero delay or flash of locked state
-  const [hasStudentSubscription, setHasStudentSubscription] = useState<boolean>(() => {
-    return studentSubscriptionService.isLocallyUnlocked(user?.id, user?.email);
-  });
-  
-  const [studentSubscription, setStudentSubscription] = useState<StudentSubscription | null>(() => {
-    return studentSubscriptionService.getLocalSubscription(user?.id, user?.email);
-  });
 
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  // Authoritative default: locked (false) until verified directly by Supabase
+  const [hasStudentSubscription, setHasStudentSubscription] = useState<boolean>(false);
+  const [studentSubscription, setStudentSubscription] = useState<StudentSubscription | null>(null);
+  const [pendingPayment, setPendingPayment] = useState<PaymentRequest | null>(null);
+  const [rejectedPayment, setRejectedPayment] = useState<PaymentRequest | null>(null);
+
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isPaywallOpen, setIsPaywallOpen] = useState<boolean>(false);
   const [paywallReason, setPaywallReason] = useState<string>('access full PG features');
   const [pendingSuccessCallback, setPendingSuccessCallback] = useState<(() => void) | null>(null);
 
   const checkSubscription = useCallback(async () => {
-    const studentId = user?.id || '';
-    const studentEmail = user?.email || '';
-
-    // If already locally unlocked, immediately guarantee active status
-    if (studentSubscriptionService.isLocallyUnlocked(studentId, studentEmail)) {
-      setHasStudentSubscription(true);
-      const local = studentSubscriptionService.getLocalSubscription(studentId, studentEmail);
-      if (local) setStudentSubscription(local);
+    // If not logged in, ensure state is completely cleared
+    if (!user) {
+      setHasStudentSubscription(false);
+      setStudentSubscription(null);
+      setPendingPayment(null);
+      setRejectedPayment(null);
+      setIsLoading(false);
+      return;
     }
 
+    setIsLoading(true);
+
     try {
-      const sub = await studentSubscriptionService.getStudentSubscription(studentId, studentEmail);
-      if (sub && sub.status === 'active') {
+      const { activeSubscription, pendingRequest, rejectedRequest } =
+        await studentSubscriptionService.getPaymentStatus(user.id);
+
+      const isProvisionalValid =
+        activeSubscription &&
+        Boolean(activeSubscription.is_provisional) &&
+        Boolean(activeSubscription.provisional_access_until) &&
+        new Date(activeSubscription.provisional_access_until!).getTime() > Date.now();
+
+      if (activeSubscription && (activeSubscription.status === 'active' || isProvisionalValid)) {
         setHasStudentSubscription(true);
-        setStudentSubscription(sub);
+        setStudentSubscription(activeSubscription);
+        setPendingPayment(pendingRequest);
+        setRejectedPayment(null);
       } else {
-        // Only set to false if NOT locally unlocked
-        if (!studentSubscriptionService.isLocallyUnlocked(studentId, studentEmail)) {
-          setHasStudentSubscription(false);
-          setStudentSubscription(null);
-        }
+        setHasStudentSubscription(false);
+        setStudentSubscription(null);
+        setPendingPayment(pendingRequest);
+        setRejectedPayment(rejectedRequest);
       }
     } catch (err) {
-      console.warn('Student subscription check error:', err);
-      if (studentSubscriptionService.isLocallyUnlocked(studentId, studentEmail)) {
-        setHasStudentSubscription(true);
-        setStudentSubscription(studentSubscriptionService.getLocalSubscription(studentId, studentEmail));
-      }
+      console.warn('[StudentSubscriptionContext] Entitlement check error:', err);
+      // On error, guarantee locked state rather than phantom unlocking
+      setHasStudentSubscription(false);
+      setStudentSubscription(null);
     } finally {
       setIsLoading(false);
     }
@@ -71,8 +80,8 @@ export const StudentSubscriptionProvider: React.FC<{ children: React.ReactNode }
   }, [checkSubscription]);
 
   const openPaywall = (reason?: string, onSuccess?: () => void) => {
-    // CRITICAL: If the customer already paid and pass is active, NEVER show paywall again!
-    if (hasStudentSubscription || studentSubscriptionService.isLocallyUnlocked(user?.id, user?.email)) {
+    // Only bypass if Supabase confirms active entitlement
+    if (hasStudentSubscription) {
       if (onSuccess) {
         onSuccess();
       }
@@ -90,9 +99,9 @@ export const StudentSubscriptionProvider: React.FC<{ children: React.ReactNode }
   };
 
   const handlePaywallSuccess = async () => {
-    setHasStudentSubscription(true);
+    // Re-verify from Supabase database
     await checkSubscription();
-    if (pendingSuccessCallback) {
+    if (hasStudentSubscription && pendingSuccessCallback) {
       pendingSuccessCallback();
     }
   };
@@ -102,6 +111,8 @@ export const StudentSubscriptionProvider: React.FC<{ children: React.ReactNode }
       value={{
         hasStudentSubscription,
         studentSubscription,
+        pendingPayment,
+        rejectedPayment,
         isLoading,
         openPaywall,
         closePaywall,

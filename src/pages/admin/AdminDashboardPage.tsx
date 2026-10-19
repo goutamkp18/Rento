@@ -14,27 +14,32 @@ import {
 } from 'lucide-react';
 import { listingsService } from '../../services/listingsService';
 import { auditService, AdminAuditLog } from '../../services/auditService';
-import { PGListing, ListingRevision } from '../../types';
+import { paymentService } from '../../services/paymentService';
+import { PGListing, ListingRevision, PaymentRequest } from '../../types';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
+import { CreditCard } from 'lucide-react';
 
 export const AdminDashboardPage: React.FC = () => {
   const [listings, setListings] = useState<PGListing[]>([]);
   const [revisions, setRevisions] = useState<(ListingRevision & { listing?: PGListing })[]>([]);
+  const [paymentRequests, setPaymentRequests] = useState<PaymentRequest[]>([]);
   const [auditLogs, setAuditLogs] = useState<AdminAuditLog[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const loadDashboardData = async () => {
       try {
-        const [allListings, allRevisions, logs] = await Promise.all([
+        const [allListings, allRevisions, logs, payments] = await Promise.all([
           listingsService.getAllListingsForAdmin(),
           listingsService.getAllPendingRevisionsForAdmin(),
           auditService.getLogs(),
+          paymentService.getAllPaymentRequestsForAdmin(),
         ]);
         setListings(allListings);
         setRevisions(allRevisions);
         setAuditLogs(logs);
+        setPaymentRequests(payments);
       } catch (e) {
         console.error('Failed to load dashboard data', e);
       } finally {
@@ -51,6 +56,7 @@ export const AdminDashboardPage: React.FC = () => {
   const totalAwaitingReview = pendingListings.length + revisions.length;
   const publishedListings = listings.filter(l => l.publication_status === 'published');
   const verifiedListings = listings.filter(l => l.verification_status === 'verified');
+  const pendingPayments = paymentRequests.filter(r => r.status === 'pending');
 
   return (
     <div className="py-8">
@@ -64,24 +70,33 @@ export const AdminDashboardPage: React.FC = () => {
               <span>Operations Management Console</span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-black text-white">
-              System Administration & Moderation
+              System Administration &amp; Moderation
             </h1>
             <p className="text-xs sm:text-sm text-slate-300 max-w-xl">
-              Inspect submitted PG accommodations, conduct physical safety verification audits, review owner compliance, and monitor the immutable security audit log.
+              Inspect submitted PG accommodations, conduct physical safety verification audits, review owner compliance, and verify UPI subscription payments.
             </p>
           </div>
 
-          <div className="flex items-center gap-3 shrink-0">
+          <div className="flex flex-wrap items-center gap-3 shrink-0">
+            <Link to="/admin/payments">
+              <Button
+                variant={pendingPayments.length > 0 ? 'glow' : 'outline'}
+                size="md"
+                leftIcon={<CreditCard className="w-4 h-4" />}
+              >
+                Verify Payments ({pendingPayments.length})
+              </Button>
+            </Link>
             <Link to="/admin/listings">
               <Button variant="primary" size="md" leftIcon={<Building2 className="w-4 h-4" />}>
-                Open Review Queue ({totalAwaitingReview})
+                Review Listings ({totalAwaitingReview})
               </Button>
             </Link>
           </div>
         </div>
 
         {/* Metric Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
           <div className="p-5 rounded-2xl bg-navy-900/90 border border-navy-800 shadow-lg">
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold text-slate-400">Total Properties</span>
@@ -95,6 +110,21 @@ export const AdminDashboardPage: React.FC = () => {
 
           <div className="p-5 rounded-2xl bg-navy-900/90 border border-navy-800 shadow-lg">
             <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-400">Pending Payments</span>
+              <div className="w-8 h-8 rounded-xl bg-violet-500/10 text-violet-400 flex items-center justify-center">
+                <CreditCard className="w-4 h-4" />
+              </div>
+            </div>
+            <p className="text-2xl font-black text-white mt-2">{pendingPayments.length}</p>
+            <p className="text-[11px] text-violet-400 font-medium mt-1">
+              <Link to="/admin/payments" className="underline hover:text-white">
+                Awaiting manual UTR audit →
+              </Link>
+            </p>
+          </div>
+
+          <div className="p-5 rounded-2xl bg-navy-900/90 border border-navy-800 shadow-lg">
+            <div className="flex items-center justify-between">
               <span className="text-xs font-semibold text-slate-400">Awaiting Review</span>
               <div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center">
                 <Clock className="w-4 h-4" />
@@ -102,7 +132,7 @@ export const AdminDashboardPage: React.FC = () => {
             </div>
             <p className="text-2xl font-black text-white mt-2">{totalAwaitingReview}</p>
             <p className="text-[11px] text-amber-400 font-medium mt-1">
-              {revisions.length} edits pending • {pendingListings.length} new listings
+              {revisions.length} edits • {pendingListings.length} new
             </p>
           </div>
 

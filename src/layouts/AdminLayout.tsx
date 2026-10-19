@@ -8,7 +8,8 @@ import {
   LogOut,
   ExternalLink,
   Lock,
-  ChevronRight
+  ChevronRight,
+  CreditCard
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/ui/Button';
@@ -36,6 +37,12 @@ export const AdminLayout: React.FC = () => {
       label: 'Review Queue',
       icon: Building2,
       active: location.pathname.startsWith('/admin/listings'),
+    },
+    {
+      to: '/admin/payments',
+      label: 'Payments & Verification',
+      icon: CreditCard,
+      active: location.pathname === '/admin/payments',
     },
     {
       to: '/admin/users',

@@ -19,18 +19,23 @@ import {
 } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
+import { Modal } from '../../components/ui/Modal';
 import { useSubscription } from '../../context/SubscriptionContext';
+import { useToast } from '../../context/ToastContext';
+import { paymentService } from '../../services/paymentService';
 import {
   OWNER_SUBSCRIPTION_PLANS,
   calculatePlanPrice,
   formatINR,
   formatListingLimit,
-  DEFAULT_GST_RATE
+  DEFAULT_GST_RATE,
+  getSubscriptionPlan
 } from '../../utils/pricing';
-import { SubscriptionPlanId } from '../../types';
+import { SubscriptionPlanId, PaymentRequest } from '../../types';
 
 export const OwnerSubscriptionPage: React.FC = () => {
   const navigate = useNavigate();
+  const { showToast } = useToast();
   const {
     subscription,
     currentPlan,
@@ -47,12 +52,15 @@ export const OwnerSubscriptionPage: React.FC = () => {
     activeListingId,
     setActiveListingForBasic,
     selectPlan,
-    upgradePlan,
-    cancelSubscription,
+    paymentHistory,
+    refreshSubscription,
     isLoading
   } = useSubscription();
 
   const [isActionLoading, setIsActionLoading] = useState(false);
+  const [disputeItem, setDisputeItem] = useState<PaymentRequest | null>(null);
+  const [disputeReason, setDisputeReason] = useState('');
+  const [isSubmittingDispute, setIsSubmittingDispute] = useState(false);
 
   // Formatter for dates
   const formatDate = (isoString?: string | null) => {
@@ -73,17 +81,34 @@ export const OwnerSubscriptionPage: React.FC = () => {
     navigate(`/owner/checkout?plan=${planId}&upgrade=true`);
   };
 
-  const handleInstantUpgradeDemo = async (planId: SubscriptionPlanId) => {
+  const handleRefresh = async () => {
     setIsActionLoading(true);
-    await upgradePlan(planId);
+    await refreshSubscription();
     setIsActionLoading(false);
   };
 
-  const handleSimulateCancel = async () => {
-    if (window.confirm('Simulate cancelling this subscription in demo mode? PG registration will be locked.')) {
-      setIsActionLoading(true);
-      await cancelSubscription();
-      setIsActionLoading(false);
+  const handleDisputeSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!disputeItem || !disputeReason.trim()) return;
+    setIsSubmittingDispute(true);
+    try {
+      await paymentService.disputePayment(disputeItem.id, disputeReason.trim());
+      showToast({
+        type: 'success',
+        title: 'Dispute Submitted',
+        message: 'Your dispute has been logged for admin re-investigation.',
+      });
+      setDisputeItem(null);
+      setDisputeReason('');
+      await refreshSubscription();
+    } catch (err: any) {
+      showToast({
+        type: 'error',
+        title: 'Dispute Failed',
+        message: err?.message || 'Could not record dispute.',
+      });
+    } finally {
+      setIsSubmittingDispute(false);
     }
   };
 
@@ -98,6 +123,7 @@ export const OwnerSubscriptionPage: React.FC = () => {
 
   return (
     <div className="space-y-8 max-w-5xl">
+
       
       {/* Header */}
       <div className="pb-4 border-b border-navy-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -215,6 +241,41 @@ export const OwnerSubscriptionPage: React.FC = () => {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Pending Payment Verification Banner */}
+      {(subscription?.payment_status === 'pending' || subscription?.payment_status === 'pending_verification') && (
+        <div className="p-5 rounded-2xl bg-amber-950/40 border border-amber-500/40 text-white flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xl">
+          <div className="flex items-start sm:items-center gap-3.5">
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-amber-500/20 text-amber-400 border border-amber-500/30">
+              <Clock className="w-5 h-5 animate-pulse" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm sm:text-base font-bold text-white">
+                  Payment Verification in Progress
+                </h3>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                  Pending Admin Verification
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 mt-0.5 max-w-2xl">
+                Your payment for the <strong className="text-white">{getSubscriptionPlan(subscription.selected_plan_id || subscription.plan_id).name}</strong> plan is currently pending manual verification by our operations team. Entitlements will activate once approved.
+              </p>
+            </div>
+          </div>
+
+          <Button
+            size="sm"
+            variant="outline"
+            className="shrink-0 text-xs font-semibold border-amber-500/30 text-amber-300 hover:bg-amber-500/10 shadow-sm"
+            onClick={handleRefresh}
+            isLoading={isActionLoading}
+            leftIcon={<RefreshCw className="w-3.5 h-3.5 text-amber-400" />}
+          >
+            Refresh Status
+          </Button>
         </div>
       )}
 
@@ -531,23 +592,13 @@ export const OwnerSubscriptionPage: React.FC = () => {
                       Currently Active
                     </Button>
                   ) : (
-                    <div className="space-y-2">
-                      <Button
-                        variant={plan.isRecommended ? 'glow' : 'outline'}
-                        className="w-full text-xs justify-center"
-                        onClick={() => handleSelectUpgrade(plan.id)}
-                      >
-                        Select &amp; Upgrade →
-                      </Button>
-                      <button
-                        type="button"
-                        onClick={() => handleInstantUpgradeDemo(plan.id)}
-                        disabled={isActionLoading}
-                        className="w-full text-[10px] text-slate-500 hover:text-slate-300 text-center block transition-colors"
-                      >
-                        Instant Switch
-                      </button>
-                    </div>
+                    <Button
+                      variant={plan.isRecommended ? 'glow' : 'outline'}
+                      className="w-full text-xs justify-center"
+                      onClick={() => handleSelectUpgrade(plan.id)}
+                    >
+                      Select &amp; Pay via UPI →
+                    </Button>
                   )}
                 </div>
               </div>
@@ -555,6 +606,185 @@ export const OwnerSubscriptionPage: React.FC = () => {
           })}
         </div>
       </div>
+
+      {/* Durable Payment & Renewal History Section */}
+      <div className="bg-navy-900 border border-navy-750 rounded-3xl p-6 sm:p-8 shadow-xl space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-navy-800">
+          <div>
+            <h3 className="text-lg font-bold text-white flex items-center gap-2">
+              <Calendar className="w-5 h-5 text-violet-400" />
+              <span>Durable Payment &amp; Subscription History</span>
+            </h3>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Authoritative records of all renewal, upgrade, and subscription transactions stored permanently in Supabase.
+            </p>
+          </div>
+
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={handleRefresh}
+            isLoading={isActionLoading}
+            className="text-xs text-slate-400 hover:text-white"
+            leftIcon={<RefreshCw className="w-3.5 h-3.5" />}
+          >
+            Refresh Records
+          </Button>
+        </div>
+
+        {paymentHistory.length === 0 ? (
+          <div className="p-8 text-center border border-dashed border-navy-800 rounded-2xl text-xs text-slate-400 space-y-1">
+            <p className="font-semibold text-slate-300">No payment history yet</p>
+            <p className="text-[11px] text-slate-500">
+              Your 30-day free trial or initial tier requires no payment. Renewal transactions will be permanently tracked here.
+            </p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-navy-800 text-slate-400 text-[11px] uppercase tracking-wider font-semibold">
+                  <th className="pb-3 pr-4">Request Ref</th>
+                  <th className="pb-3 px-4">Plan</th>
+                  <th className="pb-3 px-4">Amount</th>
+                  <th className="pb-3 px-4">UTR Ref</th>
+                  <th className="pb-3 px-4">Status</th>
+                  <th className="pb-3 px-4">Date Submitted</th>
+                  <th className="pb-3 pl-4">Details</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-navy-800 text-slate-300">
+                {paymentHistory.map(item => (
+                  <tr key={item.id} className="hover:bg-navy-850/50 transition-colors">
+                    <td className="py-3.5 pr-4 font-mono text-[11px] text-violet-300">
+                      #{item.id.slice(0, 8)}
+                    </td>
+                    <td className="py-3.5 px-4 font-semibold text-white capitalize">
+                      {item.plan_id.replace('_', ' ')}
+                    </td>
+                    <td className="py-3.5 px-4 font-bold text-white">
+                      {formatINR(item.amount_paise / 100)}
+                    </td>
+                    <td className="py-3.5 px-4 font-mono text-[11px]">
+                      {item.utr || '—'}
+                    </td>
+                    <td className="py-3.5 px-4">
+                      <span
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
+                          item.status === 'approved'
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                            : item.status === 'pending' || item.status === 'pending_verification'
+                            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30 animate-pulse'
+                            : item.status === 'disputed'
+                            ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                            : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                        }`}
+                      >
+                        {item.status.replace('_', ' ')}
+                      </span>
+                    </td>
+                    <td className="py-3.5 px-4 text-slate-400">
+                      {new Date(item.created_at).toLocaleDateString('en-IN', {
+                        day: 'numeric',
+                        month: 'short',
+                        year: 'numeric',
+                      })}
+                    </td>
+                    <td className="py-3.5 pl-4 text-[11px] text-slate-400">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="truncate max-w-xs">
+                          {item.status === 'approved' && item.verified_at
+                            ? `Verified on ${new Date(item.verified_at).toLocaleDateString('en-IN')}`
+                            : item.status === 'disputed'
+                            ? `Dispute logged: ${item.dispute_reason || 'In review'}`
+                            : item.status === 'rejected' && item.rejection_reason
+                            ? item.rejection_reason
+                            : 'Awaiting manual operations audit'}
+                        </span>
+                        {item.status === 'rejected' && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-[10px] text-rose-300 hover:text-white px-2 py-0.5 h-auto border border-rose-500/30 shrink-0"
+                            onClick={() => {
+                              setDisputeItem(item);
+                              setDisputeReason('');
+                            }}
+                          >
+                            Dispute
+                          </Button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Dispute Modal for Owners */}
+      {disputeItem && (
+        <Modal
+          isOpen={!!disputeItem}
+          onClose={() => {
+            setDisputeItem(null);
+            setDisputeReason('');
+          }}
+          title="Dispute Payment Rejection"
+          maxWidth="md"
+        >
+          <form onSubmit={handleDisputeSubmit} className="space-y-4">
+            <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-200 space-y-1">
+              <p className="font-bold text-white flex items-center gap-1.5">
+                <AlertCircle className="w-4 h-4 text-amber-400" />
+                <span>Re-investigation Request</span>
+              </p>
+              <p className="text-slate-300">
+                Payment request <strong className="text-white">#{disputeItem.id.slice(0, 8)}</strong> was rejected with reason: <span className="text-rose-300 font-medium">"{disputeItem.rejection_reason || 'Bank credit not located'}"</span>.
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-xs font-bold text-slate-300">
+                Provide Clarification / Bank Transaction Details: <span className="text-red-400">*</span>
+              </label>
+              <textarea
+                value={disputeReason}
+                onChange={e => setDisputeReason(e.target.value)}
+                placeholder="e.g. Debited from SBI A/C ending 4589 at 14:20 IST. UTR is 4289... Please verify."
+                rows={4}
+                className="w-full bg-navy-950 border border-navy-750 rounded-xl p-3 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-brand-500 leading-relaxed"
+                required
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setDisputeItem(null);
+                  setDisputeReason('');
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                variant="primary"
+                size="sm"
+                isLoading={isSubmittingDispute}
+                disabled={!disputeReason.trim()}
+              >
+                Submit Dispute
+              </Button>
+            </div>
+          </form>
+        </Modal>
+      )}
 
     </div>
   );

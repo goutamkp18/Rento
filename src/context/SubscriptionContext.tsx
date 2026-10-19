@@ -1,5 +1,12 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { OwnerSubscription, SubscriptionPlan, SubscriptionPlanId, SubscriptionStatus, TrialInfo } from '../types';
+import {
+  OwnerSubscription,
+  SubscriptionPlan,
+  SubscriptionPlanId,
+  SubscriptionStatus,
+  TrialInfo,
+  PaymentRequest
+} from '../types';
 import { subscriptionService } from '../services/subscriptionService';
 import { listingsService } from '../services/listingsService';
 import { getSubscriptionPlan } from '../utils/pricing';
@@ -18,6 +25,7 @@ interface SubscriptionContextType {
   listingLimit: number;
   remainingCapacity: number;
   capacityReason?: string;
+  paymentHistory: PaymentRequest[];
   // 30-Day Free Trial extensions
   trialInfo: TrialInfo;
   isTrialActive: boolean;
@@ -27,9 +35,7 @@ interface SubscriptionContextType {
   startTrialOnFirstListing: () => Promise<OwnerSubscription>;
   setActiveListingForBasic: (listingId: string) => Promise<void>;
   selectPlan: (planId: SubscriptionPlanId) => void;
-  simulatePayment: (isSuccess: boolean) => Promise<boolean>;
-  upgradePlan: (planId: SubscriptionPlanId) => Promise<void>;
-  cancelSubscription: () => Promise<void>;
+  submitPaymentRequest: (utr: string, receiptFile?: File | null) => Promise<PaymentRequest>;
   refreshSubscription: () => Promise<void>;
 }
 
@@ -42,24 +48,28 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const [subscription, setSubscription] = useState<OwnerSubscription | null>(null);
   const [selectedPlanId, setSelectedPlanId] = useState<SubscriptionPlanId>('pro');
   const [listingCount, setListingCount] = useState<number>(0);
+  const [paymentHistory, setPaymentHistory] = useState<PaymentRequest[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   const loadSubscriptionData = useCallback(async () => {
     if (!user || user.role !== 'owner') {
       setSubscription(null);
+      setPaymentHistory([]);
       setIsLoading(false);
       return;
     }
 
     setIsLoading(true);
     try {
-      const [sub, listings] = await Promise.all([
+      const [sub, listings, history] = await Promise.all([
         subscriptionService.getOwnerSubscription(user.id),
         listingsService.getOwnerListings(user.id),
+        subscriptionService.getPaymentHistory(user.id),
       ]);
 
       setSubscription(sub);
       setListingCount(listings.length);
+      setPaymentHistory(history);
       setSelectedPlanId(subscriptionService.getSelectedPlan());
     } catch (err) {
       console.error('Failed to load subscription data', err);
@@ -95,7 +105,7 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
     setIsLoading(true);
     try {
       const updated = await subscriptionService.setActiveListingForBasicPlan(user.id, listingId);
-      setSubscription(updated);
+      if (updated) setSubscription(updated);
       showToast({
         type: 'success',
         title: 'Active Property Updated',
@@ -112,135 +122,99 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
   };
 
-  const simulatePayment = async (isSuccess: boolean): Promise<boolean> => {
-    if (!user) return false;
+  /**
+   * Submits a renewal or upgrade payment request to Supabase.
+   * Enforces server-controlled pricing and marks status 'pending' until admin verification.
+   */
+  const submitPaymentRequest = async (
+    utr: string,
+    receiptFile?: File | null
+  ): Promise<PaymentRequest> => {
+    if (!user) throw new Error('Authentication required');
 
     setIsLoading(true);
     try {
-      if (isSuccess) {
-        const activeSub = await subscriptionService.createDemoSubscription(
-          user.id,
-          selectedPlanId,
-          'active'
-        );
-        setSubscription(activeSub);
-        showToast({
-          type: 'success',
-          title: 'Plan Activated',
-          message: `Your ${getSubscriptionPlan(selectedPlanId).name} subscription is now active.`,
-          isMockPersisted: true,
-        });
-        return true;
-      } else {
-        const failedSub = await subscriptionService.updateSubscriptionStatus(
-          user.id,
-          'payment_failed'
-        );
-        setSubscription(failedSub);
-        showToast({
-          type: 'error',
-          title: 'Payment Simulation Failed',
-          message: 'The simulated transaction failed. Your subscription remains inactive.',
-        });
-        return false;
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  };
+      const result = await subscriptionService.submitOwnerPaymentRequest({
+        ownerId: user.id,
+        planId: selectedPlanId,
+        utr,
+        receiptFile,
+      });
 
-  const upgradePlan = async (newPlanId: SubscriptionPlanId) => {
-    if (!user) return;
+      // Reload subscription & history to reflect pending state
+      await loadSubscriptionData();
 
-    setIsLoading(true);
-    try {
-      const updated = await subscriptionService.upgradeSubscription(user.id, newPlanId);
-      setSubscription(updated);
-      setSelectedPlanId(newPlanId);
       showToast({
         type: 'success',
-        title: 'Plan Upgraded',
-        message: `Upgraded to ${getSubscriptionPlan(newPlanId).name} plan. Listing limits updated immediately.`,
-        isMockPersisted: true,
+        title: 'Payment Submitted for Verification',
+        message: `Your ${getSubscriptionPlan(selectedPlanId).name} payment reference has been recorded and is pending admin approval.`,
       });
-    } catch (e: any) {
+
+      return result.request;
+    } catch (err: any) {
       showToast({
         type: 'error',
-        title: 'Upgrade Failed',
-        message: e?.message || 'Could not upgrade plan.',
+        title: 'Payment Submission Failed',
+        message: err?.message || 'Could not record payment request in Supabase.',
       });
+      throw err;
     } finally {
       setIsLoading(false);
     }
   };
 
-  const cancelSubscription = async () => {
-    if (!user) return;
-    setIsLoading(true);
-    try {
-      const cancelled = await subscriptionService.updateSubscriptionStatus(user.id, 'cancelled');
-      setSubscription(cancelled);
-      showToast({
-        type: 'info',
-        title: 'Subscription Cancelled',
-        message: 'Your subscription status is updated to cancelled.',
-        isMockPersisted: true,
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  // Derived state calculations
+  const status: SubscriptionStatus = subscription?.status || 'no_subscription';
+  const planId = subscription?.plan_id || selectedPlanId;
+  const currentPlan = subscription ? getSubscriptionPlan(planId) : null;
+  const selectedPlan = getSubscriptionPlan(selectedPlanId);
 
-  // Derived Trial state
   const trialInfo = subscriptionService.getTrialInfo(subscription);
   const isTrialActive = trialInfo.isActive;
   const isTrialEligible = trialInfo.isEligible;
   const isTrialExpired = trialInfo.isExpired;
 
-  // An owner has active access if they have a paid plan OR an active/eligible trial
-  const hasActiveSubscription =
-    subscription !== null &&
-    (subscription.status === 'active' ||
-      subscription.status === 'trialing' ||
-      subscription.status === 'trial_eligible' ||
-      isTrialActive ||
-      isTrialEligible);
+  // Authoritative listing limits
+  let listingLimit = 1;
+  let hasActiveSubscription = false;
+  let capacityReason: string | undefined;
 
-  const currentPlan = subscription
-    ? isTrialActive || isTrialEligible
-      ? getSubscriptionPlan(trialInfo.trialPlanId)
-      : isTrialExpired
-      ? getSubscriptionPlan('basic')
-      : getSubscriptionPlan(subscription.plan_id)
-    : null;
+  const isProvisionalActive =
+    Boolean(subscription?.is_provisional) &&
+    Boolean(subscription?.provisional_access_until) &&
+    new Date(subscription!.provisional_access_until!).getTime() > Date.now();
 
-  const selectedPlan = getSubscriptionPlan(selectedPlanId);
-
-  // Listing limits
-  const listingLimit = isTrialActive || isTrialEligible
-    ? trialInfo.trialListingLimit
-    : isTrialExpired
-    ? 1
-    : currentPlan
-    ? currentPlan.listingLimit
-    : 0;
+  if (isTrialEligible || isTrialActive) {
+    listingLimit = trialInfo.trialListingLimit;
+    hasActiveSubscription = true;
+    if (listingCount >= listingLimit) {
+      capacityReason = `You have reached the maximum listing capacity (${listingLimit} PGs) for the 30-Day Free Trial. Upgrade to Pro Plus for unlimited properties.`;
+    }
+  } else if (status === 'active' || isProvisionalActive) {
+    const activePlanId = (isProvisionalActive && subscription?.selected_plan_id) || subscription!.plan_id || 'pro';
+    const plan = getSubscriptionPlan(activePlanId);
+    listingLimit = plan.listingLimit;
+    hasActiveSubscription = true;
+    if (listingLimit !== Infinity && listingCount >= listingLimit) {
+      capacityReason = `You have reached the maximum listing capacity (${listingLimit} PG${listingLimit > 1 ? 's' : ''}) for the ${plan.name} plan. Please upgrade to add more properties.`;
+    }
+  } else if (isTrialExpired || status === 'expired') {
+    listingLimit = 1;
+    hasActiveSubscription = false;
+    if (listingCount > 1) {
+      capacityReason = `Your 30-day free trial has expired. The free Basic plan allows 1 active listing, but you have ${listingCount} properties saved. Please select which listing remains active or renew/upgrade to Pro.`;
+    } else if (listingCount >= 1) {
+      capacityReason = 'The free Basic plan allows 1 active listing. Upgrade to Pro or Pro Plus to list additional accommodations.';
+    }
+  } else {
+    listingLimit = 0;
+    hasActiveSubscription = false;
+    capacityReason = 'A subscription or free trial is required to list properties on Rento.';
+  }
 
   const remainingCapacity =
     listingLimit === Infinity ? Infinity : Math.max(0, listingLimit - listingCount);
-  const canAddListing = hasActiveSubscription && (listingLimit === Infinity || listingCount < listingLimit);
-
-  let capacityReason: string | undefined = undefined;
-  if (isTrialExpired) {
-    if (listingCount > 1) {
-      capacityReason = `Your 30-day free trial has expired. The free Basic plan permits 1 active listing (${listingCount} properties saved). Select which property remains active or upgrade to Pro.`;
-    } else {
-      capacityReason = 'The free Basic plan allows 1 active listing. Upgrade to Pro to list additional accommodations.';
-    }
-  } else if (!hasActiveSubscription) {
-    capacityReason = 'An active subscription or 30-day free trial is required before you can list a PG.';
-  } else if (!canAddListing) {
-    capacityReason = `You have reached your listing limit (${listingLimit} PG${listingLimit > 1 ? 's' : ''}) on the ${currentPlan?.name || 'Trial'} plan. Please upgrade to add more properties.`;
-  }
+  const canAddListing = listingLimit === Infinity || listingCount < listingLimit;
 
   return (
     <SubscriptionContext.Provider
@@ -248,7 +222,7 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
         subscription,
         currentPlan,
         selectedPlan,
-        status: subscription?.status || 'no_subscription',
+        status,
         isLoading,
         hasActiveSubscription,
         canAddListing,
@@ -256,6 +230,7 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
         listingLimit,
         remainingCapacity,
         capacityReason,
+        paymentHistory,
         trialInfo,
         isTrialActive,
         isTrialEligible,
@@ -264,9 +239,7 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
         startTrialOnFirstListing,
         setActiveListingForBasic,
         selectPlan,
-        simulatePayment,
-        upgradePlan,
-        cancelSubscription,
+        submitPaymentRequest,
         refreshSubscription: loadSubscriptionData,
       }}
     >

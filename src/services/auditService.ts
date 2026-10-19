@@ -13,9 +13,14 @@ export interface AdminAuditLog {
     | 'verify_property'
     | 'audit_in_progress'
     | 'reset_unverified'
-    | 'revoke_privileges';
+    | 'revoke_privileges'
+    | 'approve_student_payment'
+    | 'reject_student_payment'
+    | 'approve_owner_payment'
+    | 'reject_owner_payment';
   listing_id?: string;
   listing_name?: string;
+  payment_request_id?: string;
   details: string;
   rejection_reason?: string;
   created_at: string;

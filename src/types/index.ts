@@ -267,15 +267,129 @@ export interface OwnerSubscription {
   created_at: string;
   updated_at: string;
 
-  // 30-Day Free Trial fields
+  // 30-Day Free Trial & Persistence fields
   trial_status?: TrialStatus;
   trial_start?: string | null;
   trial_end?: string | null;
   trial_plan_id?: SubscriptionPlanId;
   trial_listing_limit?: number;
   selected_plan_id?: SubscriptionPlanId;
-  payment_status?: 'none' | 'pending' | 'paid' | 'failed';
+  payment_status?: 'none' | 'pending' | 'pending_verification' | 'paid' | 'failed' | 'rejected';
   active_listing_id?: string;
+  amount_paise?: number;
+  currency?: string;
+  payment_request_id?: string;
+  is_provisional?: boolean;
+  provisional_access_until?: string;
+  verified_at?: string;
+  verified_by?: string;
+  rejection_reason?: string;
+}
+
+export type PaymentRequestStatus =
+  | 'pending'
+  | 'pending_verification'
+  | 'approved'
+  | 'rejected'
+  | 'failed'
+  | 'expired'
+  | 'cancelled'
+  | 'disputed';
+
+export type PaymentPurpose =
+  | 'student_lifetime_pass'
+  | 'owner_subscription_renewal'
+  | 'owner_subscription_upgrade'
+  | 'owner_subscription_new';
+
+export type RiskLevel = 'low' | 'medium' | 'high';
+
+export type ReconciliationStatus =
+  | 'unreconciled'
+  | 'confirmed_credit'
+  | 'credit_not_found'
+  | 'amount_mismatch'
+  | 'duplicate_transaction'
+  | 'investigating';
+
+export interface OcrExtractionResult {
+  status: 'pending' | 'success' | 'failed' | 'skipped';
+  confidence: number;
+  rawText?: string;
+  extractedUtr?: string;
+  extractedAmount?: number;
+  extractedCurrency?: string;
+  extractedPayee?: string;
+  extractedDate?: string;
+  extractedStatus?: 'SUCCESS' | 'PENDING' | 'FAILED' | 'UNKNOWN';
+  detectedApp?: string;
+  mismatchReasons?: string[];
+}
+
+export interface PaymentRiskAssessment {
+  riskScore: number; // 0 to 100
+  riskLevel: RiskLevel;
+  riskFlags: string[];
+  mismatchReasons: string[];
+  isDuplicateUtr: boolean;
+  isDuplicateScreenshot: boolean;
+  isAmountMismatch: boolean;
+  isPayeeMismatch: boolean;
+  isStatusMismatch: boolean;
+  isSuspiciousPattern: boolean;
+}
+
+export interface PaymentRequest {
+  id: string;
+  reference?: string;
+  user_id: string;
+  user_type: 'student' | 'owner';
+  purpose: PaymentPurpose;
+  plan_id: 'student_pass' | SubscriptionPlanId;
+  amount_paise: number;
+  currency: string;
+  status: PaymentRequestStatus;
+  utr?: string;
+  receipt_url?: string;
+  receipt_storage_path?: string;
+  payment_method: string;
+  notes?: string;
+  rejection_reason?: string;
+  period_start?: string;
+  period_end?: string;
+  verified_at?: string;
+  verified_by?: string;
+  created_at: string;
+  updated_at: string;
+
+  // Anti-Fraud & Consistency Checks
+  screenshot_hash?: string;
+  ocr_status?: 'pending' | 'success' | 'failed' | 'skipped';
+  ocr_confidence?: number;
+  ocr_raw_text?: string;
+  ocr_extracted_utr?: string;
+  ocr_extracted_amount?: number;
+  ocr_extracted_payee?: string;
+  ocr_extracted_date?: string;
+  ocr_extracted_status?: string;
+  ocr_detected_app?: string;
+  risk_score?: number;
+  risk_level?: RiskLevel;
+  risk_flags?: string[];
+  mismatch_reasons?: string[];
+  reconciliation_status?: ReconciliationStatus;
+  reconciliation_notes?: string;
+  is_disputed?: boolean;
+  dispute_reason?: string;
+  disputed_at?: string;
+  dispute_resolution?: string;
+
+  user_profile?: {
+    full_name: string;
+    email: string;
+    role: string;
+    phone?: string;
+  };
 }
 
 export interface StudentSubscription {
@@ -284,12 +398,23 @@ export interface StudentSubscription {
   student_name?: string;
   student_email?: string;
   plan_id: 'student_pass';
-  status: 'active' | 'expired' | 'cancelled' | 'payment_failed';
+  status: 'active' | 'pending' | 'pending_verification' | 'expired' | 'cancelled' | 'payment_failed' | 'rejected';
+  entitlement_type?: 'lifetime';
+  amount_paise?: number;
+  currency?: string;
   base_price: number;
   gst_amount: number;
   total_price: number;
   payment_method?: string;
   payment_reference?: string;
+  payment_request_id?: string;
+  receipt_storage_path?: string;
+  is_provisional?: boolean;
+  provisional_access_until?: string;
+  activated_at?: string;
+  verified_at?: string;
+  verified_by?: string;
+  rejection_reason?: string;
   start_date: string;
   created_at: string;
   updated_at?: string;

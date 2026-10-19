@@ -29,12 +29,20 @@ import { downloadBookingPdf, downloadStudentPassPdf, formatINR } from '../../uti
 import { ListingCard } from '../../components/listings/ListingCard';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
-import { Download, FileText, CheckCircle2 as CheckCircleIcon, Loader2, Lock, Unlock, Zap } from 'lucide-react';
+import { Modal } from '../../components/ui/Modal';
+import { Download, FileText, CheckCircle2 as CheckCircleIcon, Loader2, Lock, Unlock, Zap, AlertTriangle } from 'lucide-react';
 
 export const StudentDashboardPage: React.FC = () => {
   const { user } = useAuth();
   const { showToast } = useToast();
-  const { hasStudentSubscription, studentSubscription, openPaywall } = useStudentSubscription();
+  const {
+    hasStudentSubscription,
+    studentSubscription,
+    pendingPayment,
+    rejectedPayment,
+    openPaywall,
+    refreshSubscription,
+  } = useStudentSubscription();
   const { favouriteCount } = useFavourites();
   const { compareCount } = useCompare();
   const navigate = useNavigate();
@@ -46,6 +54,9 @@ export const StudentDashboardPage: React.FC = () => {
   const [isDownloadingPass, setIsDownloadingPass] = useState(false);
   const [recommendations, setRecommendations] = useState<PGListing[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [isDisputeOpen, setIsDisputeOpen] = useState(false);
+  const [disputeReason, setDisputeReason] = useState('');
+  const [isSubmittingDispute, setIsSubmittingDispute] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -75,6 +86,17 @@ export const StudentDashboardPage: React.FC = () => {
     });
   }, [user]);
 
+  // One-time alert when student payment request has been rejected by admin
+  useEffect(() => {
+    if (rejectedPayment) {
+      showToast({
+        type: 'error',
+        title: 'Payment Verification Failed',
+        message: `Reason: "${rejectedPayment.rejection_reason || 'UTR not verified'}". Temporary access has ended. Please pay again with correct UTR and screenshot.`,
+      });
+    }
+  }, [rejectedPayment?.id]);
+
   const handleDownloadPdf = async (booking: Booking) => {
     setDownloadingId(booking.id);
     try {
@@ -85,28 +107,18 @@ export const StudentDashboardPage: React.FC = () => {
   };
 
   const handleDownloadPassReceipt = async () => {
+    if (!studentSubscription || studentSubscription.status !== 'active') {
+      showToast({
+        type: 'error',
+        title: 'Pass Not Active',
+        message: 'An active, server-verified student pass is required to generate this PDF.',
+      });
+      return;
+    }
+
     setIsDownloadingPass(true);
     try {
-      const activeSub =
-        studentSubscription ||
-        studentSubscriptionService.getLocalSubscription(user?.id, user?.email) || {
-          id: `sub_stu_${Date.now()}`,
-          student_id: user?.id || 'stu_user',
-          student_name: user?.full_name || 'Student Resident',
-          student_email: user?.email || '',
-          plan_id: 'student_pass' as const,
-          status: 'active' as const,
-          base_price: 7.63,
-          gst_amount: 1.37,
-          total_price: 9.0,
-          payment_method: 'upi' as const,
-          payment_reference: `TXN-STU-${Date.now().toString().slice(-7)}`,
-          start_date: new Date().toISOString(),
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        };
-
-      await downloadStudentPassPdf(activeSub);
+      await downloadStudentPassPdf(studentSubscription);
       showToast({
         type: 'success',
         title: 'Pass Saved to Folder',
@@ -127,6 +139,31 @@ export const StudentDashboardPage: React.FC = () => {
     e.preventDefault();
     if (searchQuery.trim()) {
       navigate(`/pgs?q=${encodeURIComponent(searchQuery.trim())}`);
+    }
+  };
+
+  const handleDisputeSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!rejectedPayment || !disputeReason.trim()) return;
+    setIsSubmittingDispute(true);
+    try {
+      await studentSubscriptionService.disputePayment(rejectedPayment.id, disputeReason.trim());
+      showToast({
+        type: 'success',
+        title: 'Dispute Filed',
+        message: 'Your dispute and explanation have been submitted for priority admin review.',
+      });
+      setIsDisputeOpen(false);
+      setDisputeReason('');
+      await refreshSubscription();
+    } catch (err: any) {
+      showToast({
+        type: 'error',
+        title: 'Submission Error',
+        message: err?.message || 'Could not file dispute.',
+      });
+    } finally {
+      setIsSubmittingDispute(false);
     }
   };
 
@@ -171,41 +208,49 @@ export const StudentDashboardPage: React.FC = () => {
       </div>
 
       {/* Student Pass Status Banner */}
-      <div className={`p-4 sm:p-5 rounded-2xl border transition-all shadow-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 ${
-        hasStudentSubscription
-          ? 'bg-emerald-950/40 border-emerald-500/30 text-white'
-          : 'bg-amber-950/30 border-amber-500/30 text-white'
-      }`}>
-        <div className="flex items-start sm:items-center gap-3.5">
-          <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-            hasStudentSubscription
-              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-              : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-          }`}>
-            {hasStudentSubscription ? <Unlock className="w-5 h-5" /> : <Lock className="w-5 h-5" />}
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h3 className="text-sm sm:text-base font-bold text-white">
-                {hasStudentSubscription ? '₹9 Student All-Access Pass: ACTIVE' : 'Free Explorer Mode (Limited Features)'}
-              </h3>
-              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
-                hasStudentSubscription
-                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                  : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-              }`}>
-                {hasStudentSubscription ? 'Unlocked' : 'Locked Features'}
-              </span>
+      {hasStudentSubscription ? (
+        <div className={`p-4 sm:p-5 rounded-2xl border transition-all shadow-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 ${
+          studentSubscription?.is_provisional
+            ? 'bg-brand-950/40 border-brand-500/40 text-white'
+            : 'bg-emerald-950/40 border-emerald-500/30 text-white'
+        }`}>
+          <div className="flex items-start sm:items-center gap-3.5">
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border ${
+              studentSubscription?.is_provisional
+                ? 'bg-brand-500/20 text-brand-400 border-brand-500/30'
+                : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+            }`}>
+              <Unlock className="w-5 h-5" />
             </div>
-            <p className="text-xs text-slate-300 mt-0.5 max-w-2xl">
-              {hasStudentSubscription
-                ? 'You have unlocked direct PG bookings, enquiries, live GPS / Google Maps locations, and side-by-side PG comparisons.'
-                : 'Queries, instant booking, live PG location / directions, and PG comparisons are locked. Unlock everything for just ₹9 (₹7.63 + 18% GST).'}
-            </p>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm sm:text-base font-bold text-white">
+                  ₹9 Student All-Access Pass: {studentSubscription?.is_provisional ? 'PROVISIONAL ACCESS' : 'ACTIVE'}
+                </h3>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider border ${
+                  studentSubscription?.is_provisional
+                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                    : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                }`}>
+                  {studentSubscription?.is_provisional ? '24h Temporary Window' : 'Lifetime Unlocked'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 mt-0.5 max-w-2xl">
+                {studentSubscription?.is_provisional ? (
+                  <>
+                    Temporary provisional access active until{' '}
+                    <strong className="text-white">
+                      {studentSubscription.provisional_access_until ? new Date(studentSubscription.provisional_access_until).toLocaleString('en-IN') : 'next 24 hours'}
+                    </strong>{' '}
+                    while admin validates your bank credit. You can browse and contact PGs right away.
+                  </>
+                ) : (
+                  'Server-verified entitlement active. You have full access to direct PG bookings, enquiries, live GPS / Google Maps locations, and side-by-side PG comparisons.'
+                )}
+              </p>
+            </div>
           </div>
-        </div>
 
-        {hasStudentSubscription ? (
           <Button
             size="sm"
             variant="outline"
@@ -216,7 +261,116 @@ export const StudentDashboardPage: React.FC = () => {
           >
             Save Pass to Folder (PDF)
           </Button>
-        ) : (
+        </div>
+      ) : pendingPayment ? (
+        <div className="p-4 sm:p-5 rounded-2xl border transition-all shadow-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-amber-950/40 border-amber-500/40 text-white">
+          <div className="flex items-start sm:items-center gap-3.5">
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-amber-500/20 text-amber-400 border border-amber-500/30">
+              <Clock className="w-5 h-5 animate-pulse" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm sm:text-base font-bold text-white">
+                  ₹9 Student Pass: Verification Pending
+                </h3>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                  Pending Admin Approval
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 mt-0.5 max-w-2xl">
+                Payment reference <strong className="text-white">{pendingPayment.reference || `#${pendingPayment.id.slice(0, 8)}`}</strong> (UTR: <span className="font-mono text-amber-300">{pendingPayment.utr || 'Submitted'}</span>) is being manually verified by our operations team against actual bank credits. Features will automatically unlock upon approval.
+              </p>
+            </div>
+          </div>
+
+          <Button
+            size="sm"
+            variant="outline"
+            className="shrink-0 text-xs font-semibold border-amber-500/30 text-amber-300 hover:bg-amber-500/10 shadow-sm"
+            onClick={() => refreshSubscription()}
+            leftIcon={<Clock className="w-3.5 h-3.5 text-amber-400" />}
+          >
+            Refresh Status
+          </Button>
+        </div>
+      ) : rejectedPayment ? (
+        <div className="p-5 sm:p-6 rounded-2xl border transition-all shadow-xl bg-gradient-to-br from-rose-950/70 via-rose-900/30 to-navy-950 border-rose-500/40 text-white space-y-4">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex items-start sm:items-center gap-3.5">
+              <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0 bg-rose-500/20 text-rose-400 border border-rose-500/30 shadow-inner">
+                <Lock className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-base sm:text-lg font-bold text-white">
+                    ₹9 Student Pass: Payment Request Failed
+                  </h3>
+                  <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                    Temporary Access Ended
+                  </span>
+                </div>
+                <p className="text-xs text-rose-300/90 font-medium mt-0.5">
+                  Provisional access has ended. Full PG bookings, enquiries, live GPS coordinates, and PG comparisons are locked.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto">
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-xs font-semibold border-rose-500/40 text-rose-300 hover:bg-rose-500/10 flex-1 sm:flex-initial"
+                onClick={() => setIsDisputeOpen(true)}
+                leftIcon={<AlertTriangle className="w-3.5 h-3.5" />}
+              >
+                Dispute Decision
+              </Button>
+              <Button
+                size="sm"
+                variant="primary"
+                className="text-xs font-bold shadow-lg shadow-rose-600/30 bg-rose-600 hover:bg-rose-500 text-white border-none flex-1 sm:flex-initial"
+                onClick={() => openPaywall('pay again with correct UTR and screenshot of payment')}
+                leftIcon={<Zap className="w-3.5 h-3.5" />}
+              >
+                Pay Again
+              </Button>
+            </div>
+          </div>
+
+          <div className="p-4 rounded-xl bg-rose-950/80 border border-rose-500/30 text-xs text-slate-200 space-y-2">
+            <div className="flex items-center gap-2 text-rose-200 font-semibold text-xs">
+              <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+              <span>Admin Verification Audit Note:</span>
+            </div>
+            <p className="text-slate-200 text-xs sm:text-sm pl-6 leading-relaxed">
+              Because of this reason: <strong className="text-rose-200 font-bold bg-rose-500/20 px-2.5 py-1 rounded border border-rose-500/40 font-mono text-[12px] inline-block mt-0.5">"{rejectedPayment.rejection_reason || 'UPI transaction reference could not be verified in our bank statement.'}"</strong>, your payment request failed.
+            </p>
+            <p className="text-slate-300 text-xs pl-6 pt-1">
+              👉 <strong>Next Step:</strong> Click <strong className="text-white">Pay Again</strong> above, submit your correct 12-digit UPI transaction reference (UTR), and upload a clear screenshot of payment showing the UTR.
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div className="p-4 sm:p-5 rounded-2xl border transition-all shadow-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-amber-950/30 border-amber-500/30 text-white">
+          <div className="flex items-start sm:items-center gap-3.5">
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-amber-500/20 text-amber-400 border border-amber-500/30">
+              <Lock className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm sm:text-base font-bold text-white">
+                  Free Explorer Mode (Limited Features)
+                </h3>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                  Locked Features
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 mt-0.5 max-w-2xl">
+                Queries, instant booking, live PG location / directions, and PG comparisons are locked. Unlock everything for just ₹9 (₹7.63 + 18% GST).
+              </p>
+            </div>
+          </div>
+
           <Button
             size="sm"
             variant="primary"
@@ -226,8 +380,8 @@ export const StudentDashboardPage: React.FC = () => {
           >
             Unlock All for ₹9
           </Button>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Metric Stat Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -478,6 +632,68 @@ export const StudentDashboardPage: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Dispute Modal */}
+      {isDisputeOpen && rejectedPayment && (
+        <Modal
+          isOpen={isDisputeOpen}
+          onClose={() => {
+            setIsDisputeOpen(false);
+            setDisputeReason('');
+          }}
+          title="Dispute Payment Rejection"
+          maxWidth="md"
+        >
+          <form onSubmit={handleDisputeSubmit} className="space-y-4">
+            <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-200 space-y-1">
+              <p className="font-bold text-white flex items-center gap-1.5">
+                <AlertTriangle className="w-4 h-4 text-amber-400" />
+                <span>Re-verification Request</span>
+              </p>
+              <p className="text-slate-300">
+                Your payment reference <strong className="text-white">{rejectedPayment.reference || `#${rejectedPayment.id.slice(0, 8)}`}</strong> was rejected with reason: <span className="text-rose-300 font-medium">"{rejectedPayment.rejection_reason || 'Credit not found'}"</span>.
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-xs font-bold text-slate-300">
+                Provide Clarification / Bank Transaction Details: <span className="text-red-400">*</span>
+              </label>
+              <textarea
+                value={disputeReason}
+                onChange={e => setDisputeReason(e.target.value)}
+                placeholder="e.g. Paid ₹9 from Google Pay / HDFC Bank on 19th Oct 15:30. Bank debited successfully with UPI Ref 4289... Please re-verify."
+                rows={4}
+                className="w-full bg-navy-950 border border-navy-750 rounded-xl p-3 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-brand-500 leading-relaxed"
+                required
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setIsDisputeOpen(false);
+                  setDisputeReason('');
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                variant="primary"
+                size="sm"
+                isLoading={isSubmittingDispute}
+                disabled={!disputeReason.trim()}
+              >
+                Submit Dispute for Review
+              </Button>
+            </div>
+          </form>
+        </Modal>
+      )}
 
     </div>
   );

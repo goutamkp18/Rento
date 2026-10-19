@@ -1,31 +1,23 @@
-import { OwnerSubscription, SubscriptionPlanId, SubscriptionStatus, TrialInfo, TrialStatus } from '../types';
+import {
+  OwnerSubscription,
+  SubscriptionPlanId,
+  SubscriptionStatus,
+  TrialInfo,
+  TrialStatus,
+  PaymentRequest
+} from '../types';
 import { calculatePlanPrice, getSubscriptionPlan } from '../utils/pricing';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { paymentService } from './paymentService';
 
-const SUBSCRIPTION_STORAGE_KEY = 'rento_owner_subscriptions_db';
+// Slated for purge so local storage can NEVER override server-side entitlements
+const LEGACY_OWNER_KEY = 'rento_owner_subscriptions_db';
 const PENDING_PLAN_KEY = 'rento_selected_owner_plan';
 
-function getStoredSubscriptions(): Record<string, OwnerSubscription> {
-  try {
-    const raw = localStorage.getItem(SUBSCRIPTION_STORAGE_KEY);
-    if (raw) {
-      const parsed: Record<string, OwnerSubscription> = JSON.parse(raw);
-      delete parsed['usr_owner_01']; // Remove stale dummy owner seed
-      return parsed;
-    }
-  } catch (e) {
-    console.error('Failed to parse subscriptions from storage', e);
-  }
-
-  return {};
-}
-
-function saveStoredSubscriptions(subs: Record<string, OwnerSubscription>): void {
-  try {
-    localStorage.setItem(SUBSCRIPTION_STORAGE_KEY, JSON.stringify(subs));
-  } catch (e) {
-    console.error('Failed to save subscriptions to storage', e);
-  }
+try {
+  localStorage.removeItem(LEGACY_OWNER_KEY);
+} catch {
+  // Ignore
 }
 
 export const subscriptionService = {
@@ -57,7 +49,10 @@ export const subscriptionService = {
     const isConverted = sub.trial_status === 'converted';
 
     let isExpired = sub.trial_status === 'expired' || sub.status === 'expired';
-    let isActive = (sub.trial_status === 'active' || sub.status === 'trialing') && hasStarted && !isConverted;
+    let isActive =
+      (sub.trial_status === 'active' || sub.status === 'trialing') &&
+      hasStarted &&
+      !isConverted;
 
     let daysRemaining = 0;
     let hoursRemaining = 0;
@@ -110,168 +105,171 @@ export const subscriptionService = {
   },
 
   /**
-   * Retrieves the subscription record for a specific owner.
-   * Authoritative: automatically transitions expired trials to the free Basic plan
-   * without auto-charging.
+   * Authoritatively fetches the owner subscription record from Supabase.
+   * If trial deadline is reached, transitions state to expired with 1 listing limit
+   * without deleting any existing listings or charging the owner.
    */
   async getOwnerSubscription(ownerId: string): Promise<OwnerSubscription | null> {
-    if (isSupabaseConfigured && supabase) {
-      try {
-        const { data, error } = await supabase
-          .from('subscriptions')
-          .select('*')
-          .eq('owner_id', ownerId)
-          .maybeSingle();
+    if (!ownerId) return null;
 
-        if (!error && data) {
-          const rawTrialStart = data.trial_start || (data.status === 'trialing' ? data.current_period_start : null);
-          const rawTrialEnd = data.trial_end || (data.status === 'trialing' ? data.current_period_end : null);
-          const rawTrialStatus: TrialStatus =
-            data.trial_status ||
-            (data.status === 'trialing' ? 'active' : data.status === 'expired' ? 'expired' : data.status === 'active' ? 'converted' : 'eligible');
-
-          const sub: OwnerSubscription = {
-            owner_id: data.owner_id,
-            plan_id: data.plan_id || 'pro',
-            status: data.status,
-            base_price: Number(data.base_price) || 0,
-            monthly_base_price: Number(data.base_price) || 0,
-            gst_rate: 0.18,
-            gst_amount: Number(data.gst_amount) || 0,
-            total_price: Number(data.total_price) || 0,
-            total_monthly_price: Number(data.total_price) || 0,
-            start_date: data.current_period_start || data.created_at,
-            renewal_date: data.current_period_end || '',
-            payment_reference: data.payment_method || 'live_record',
-            created_at: data.created_at,
-            updated_at: data.updated_at || data.created_at,
-            trial_status: rawTrialStatus,
-            trial_start: rawTrialStart,
-            trial_end: rawTrialEnd,
-            trial_plan_id: data.trial_plan_id || 'pro',
-            trial_listing_limit: Number(data.trial_listing_limit) || 3,
-            selected_plan_id: data.selected_plan_id || data.plan_id,
-            payment_status: data.payment_status || (data.status === 'active' ? 'paid' : 'none'),
-            active_listing_id: data.active_listing_id,
-          };
-
-          // Authoritative Server/Database check: Expire trial if past deadline
-          if (
-            (sub.status === 'trialing' || sub.trial_status === 'active') &&
-            sub.trial_end &&
-            new Date(sub.trial_end).getTime() <= Date.now()
-          ) {
-            sub.status = 'expired';
-            sub.trial_status = 'expired';
-            sub.plan_id = 'basic'; // Switch to free Basic plan
-            sub.listing_limit = 1; // Enforce free plan listing limit
-            sub.updated_at = new Date().toISOString();
-
-            // Persist expiration change safely to Supabase
-            try {
-              await supabase
-                .from('subscriptions')
-                .update({
-                  status: 'expired',
-                  trial_status: 'expired',
-                  plan_id: 'basic',
-                  listing_limit: 1,
-                  updated_at: sub.updated_at,
-                })
-                .eq('owner_id', ownerId);
-            } catch (updateErr) {
-              console.warn('Could not update expired subscription in Supabase:', updateErr);
-            }
-          }
-
-          const subs = getStoredSubscriptions();
-          subs[ownerId] = sub;
-          saveStoredSubscriptions(subs);
-          return sub;
-        }
-      } catch (e) {
-        console.warn('Supabase getOwnerSubscription check:', e);
-      }
+    if (!isSupabaseConfigured || !supabase) {
+      console.warn('[subscriptionService] Supabase is not configured.');
+      return null;
     }
 
-    // Fallback to persistent storage
-    const subs = getStoredSubscriptions();
-    let localSub = subs[ownerId] || null;
+    try {
+      const { data, error } = await supabase
+        .from('subscriptions')
+        .select('*')
+        .eq('owner_id', ownerId)
+        .maybeSingle();
 
-    if (localSub) {
-      // Check expiration on local record
-      if (
-        (localSub.status === 'trialing' || localSub.trial_status === 'active') &&
-        localSub.trial_end &&
-        new Date(localSub.trial_end).getTime() <= Date.now()
-      ) {
-        localSub = {
-          ...localSub,
-          status: 'expired',
-          trial_status: 'expired',
-          plan_id: 'basic',
-          listing_limit: 1,
-          updated_at: new Date().toISOString(),
+      if (error) {
+        console.warn('[subscriptionService] Supabase getOwnerSubscription check:', error.message);
+        return null;
+      }
+
+      if (data) {
+        const rawTrialStart =
+          data.trial_start ||
+          (data.status === 'trialing' ? data.current_period_start : null);
+        const rawTrialEnd =
+          data.trial_end ||
+          (data.status === 'trialing' ? data.current_period_end : null);
+        const rawTrialStatus: TrialStatus =
+          data.trial_status ||
+          (data.status === 'trialing'
+            ? 'active'
+            : data.status === 'expired'
+            ? 'expired'
+            : data.status === 'active'
+            ? 'converted'
+            : 'eligible');
+
+        const sub: OwnerSubscription = {
+          owner_id: data.owner_id,
+          plan_id: data.plan_id || 'pro',
+          status: data.status,
+          base_price: Number(data.base_price) || 0,
+          monthly_base_price: Number(data.base_price) || 0,
+          gst_rate: 0.18,
+          gst_amount: Number(data.gst_amount) || 0,
+          total_price: Number(data.total_price) || 0,
+          total_monthly_price: Number(data.total_price) || 0,
+          listing_limit: Number(data.listing_limit) || 3,
+          start_date: data.current_period_start || data.created_at,
+          renewal_date: data.current_period_end || '',
+          payment_reference: data.payment_method || 'live_record',
+          created_at: data.created_at,
+          updated_at: data.updated_at || data.created_at,
+          trial_status: rawTrialStatus,
+          trial_start: rawTrialStart,
+          trial_end: rawTrialEnd,
+          trial_plan_id: data.trial_plan_id || 'pro',
+          trial_listing_limit: Number(data.trial_listing_limit) || 3,
+          selected_plan_id: data.selected_plan_id || data.plan_id,
+          payment_status: data.payment_status || (data.status === 'active' ? 'paid' : 'none'),
+          active_listing_id: data.active_listing_id,
+          payment_request_id: data.payment_request_id,
+          amount_paise: data.amount_paise,
+          currency: data.currency || 'INR',
+          is_provisional: data.is_provisional,
+          provisional_access_until: data.provisional_access_until,
+          verified_at: data.verified_at,
+          verified_by: data.verified_by,
+          rejection_reason: data.rejection_reason,
         };
-        subs[ownerId] = localSub;
-        saveStoredSubscriptions(subs);
+
+        // Authoritative Database check: Expire trial if past 30-day deadline
+        if (
+          (sub.status === 'trialing' || sub.trial_status === 'active') &&
+          sub.trial_end &&
+          new Date(sub.trial_end).getTime() <= Date.now()
+        ) {
+          sub.status = 'expired';
+          sub.trial_status = 'expired';
+          sub.plan_id = 'basic'; // Switch to free Basic plan
+          sub.listing_limit = 1; // Enforce free plan listing limit
+          sub.updated_at = new Date().toISOString();
+
+          try {
+            await supabase
+              .from('subscriptions')
+              .update({
+                status: 'expired',
+                trial_status: 'expired',
+                plan_id: 'basic',
+                listing_limit: 1,
+                updated_at: sub.updated_at,
+              })
+              .eq('owner_id', ownerId);
+          } catch (updateErr) {
+            console.warn('Could not update expired subscription in Supabase:', updateErr);
+          }
+        }
+
+        return sub;
       }
-      return localSub;
-    }
 
-    // New eligible PG owner: Initialize 30-day free trial state
-    const defaultTrialSub: OwnerSubscription = {
-      owner_id: ownerId,
-      plan_id: 'pro',
-      status: 'trial_eligible',
-      base_price: 0,
-      monthly_base_price: 0,
-      gst_rate: 0.18,
-      gst_amount: 0,
-      total_price: 0,
-      total_monthly_price: 0,
-      listing_limit: 3,
-      start_date: '',
-      renewal_date: '',
-      payment_reference: 'free_trial_eligible',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      trial_status: 'eligible',
-      trial_start: null,
-      trial_end: null,
-      trial_plan_id: 'pro',
-      trial_listing_limit: 3,
-      selected_plan_id: 'pro',
-      payment_status: 'none',
-    };
+      // No record in Supabase: Provision initial 30-day trial eligible row in Supabase
+      const now = new Date().toISOString();
+      const initialTrialSub: OwnerSubscription = {
+        owner_id: ownerId,
+        plan_id: 'pro',
+        status: 'trial_eligible',
+        base_price: 0,
+        monthly_base_price: 0,
+        gst_rate: 0.18,
+        gst_amount: 0,
+        total_price: 0,
+        total_monthly_price: 0,
+        listing_limit: 3,
+        start_date: '',
+        renewal_date: '',
+        payment_reference: 'free_trial_eligible',
+        created_at: now,
+        updated_at: now,
+        trial_status: 'eligible',
+        trial_start: null,
+        trial_end: null,
+        trial_plan_id: 'pro',
+        trial_listing_limit: 3,
+        selected_plan_id: 'pro',
+        payment_status: 'none',
+        amount_paise: 0,
+        currency: 'INR',
+      };
 
-    subs[ownerId] = defaultTrialSub;
-    saveStoredSubscriptions(subs);
-
-    // If Supabase configured, attempt to save initial record
-    if (isSupabaseConfigured && supabase) {
       try {
         await supabase.from('subscriptions').upsert(
           {
             owner_id: ownerId,
             plan_id: 'pro',
-            status: 'trialing',
+            status: 'trial_eligible',
             base_price: 0,
             gst_amount: 0,
             total_price: 0,
             listing_limit: 3,
             payment_method: 'free_trial',
-            created_at: defaultTrialSub.created_at,
-            updated_at: defaultTrialSub.updated_at,
+            trial_status: 'eligible',
+            trial_plan_id: 'pro',
+            trial_listing_limit: 3,
+            selected_plan_id: 'pro',
+            payment_status: 'none',
+            created_at: now,
+            updated_at: now,
           },
           { onConflict: 'owner_id' }
         );
-      } catch (e) {
-        // Safe ignore
+      } catch (insertErr) {
+        console.warn('Initial trial row insertion notice:', insertErr);
       }
-    }
 
-    return defaultTrialSub;
+      return initialTrialSub;
+    } catch (e) {
+      console.warn('Supabase getOwnerSubscription check:', e);
+      return null;
+    }
   },
 
   /**
@@ -308,6 +306,7 @@ export const subscriptionService = {
       gst_amount: 0,
       total_price: 0,
       total_monthly_price: 0,
+      listing_limit: 3,
       start_date: now.toISOString(),
       renewal_date: expiry.toISOString(),
       payment_reference: 'free_trial_activated',
@@ -322,17 +321,11 @@ export const subscriptionService = {
       payment_status: 'none',
     };
 
-    // Save to local storage
-    const subs = getStoredSubscriptions();
-    subs[ownerId] = startedSub;
-    saveStoredSubscriptions(subs);
-
-    // Authoritative Database Sync: Try RPC first, fallback to table update/upsert
     if (isSupabaseConfigured && supabase) {
       try {
         const { error: rpcError } = await supabase.rpc('start_owner_trial', { p_owner_id: ownerId });
         if (rpcError) {
-          // Fallback to direct upsert with standard and trial columns
+          // Direct upsert with trial columns
           await supabase.from('subscriptions').upsert(
             {
               owner_id: ownerId,
@@ -345,6 +338,11 @@ export const subscriptionService = {
               current_period_start: now.toISOString(),
               current_period_end: expiry.toISOString(),
               payment_method: 'free_trial',
+              trial_status: 'active',
+              trial_start: now.toISOString(),
+              trial_end: expiry.toISOString(),
+              trial_plan_id: 'pro',
+              trial_listing_limit: 3,
               updated_at: now.toISOString(),
             },
             { onConflict: 'owner_id' }
@@ -387,117 +385,31 @@ export const subscriptionService = {
       if (saved && (saved === 'basic' || saved === 'pro' || saved === 'pro_plus')) {
         return saved;
       }
-    } catch (e) {
+    } catch {
       // Ignore
     }
     return 'pro';
   },
 
   /**
-   * Creates or updates a subscription for the owner (e.g. upon real or simulated payment).
+   * Submits a renewal or upgrade payment request to Supabase.
+   * Creates a durable payment_requests record and updates subscription row with pending status.
+   * Subscription is activated only upon admin verification.
    */
-  async createDemoSubscription(
-    ownerId: string,
-    planId: SubscriptionPlanId,
-    status: SubscriptionStatus = 'active',
-    paymentRef?: string
-  ): Promise<OwnerSubscription> {
-    const subs = getStoredSubscriptions();
-    const plan = getSubscriptionPlan(planId);
-    const price = calculatePlanPrice(plan.basePrice);
-
-    const now = new Date();
-    const renewal = new Date();
-    renewal.setDate(now.getDate() + 30);
-
-    const ref = paymentRef || (status === 'active' ? `PAY-${Date.now().toString().slice(-6)}` : undefined);
-
-    const newSub: OwnerSubscription = {
-      owner_id: ownerId,
-      plan_id: planId,
-      status,
-      base_price: price.basePrice,
-      monthly_base_price: price.basePrice,
-      gst_rate: price.gstRate,
-      gst_amount: price.gstAmount,
-      total_price: price.totalAmount,
-      total_monthly_price: price.totalAmount,
-      start_date: now.toISOString(),
-      renewal_date: renewal.toISOString(),
-      payment_reference: ref,
-      demo_payment_reference: ref,
-      created_at: subs[ownerId]?.created_at || now.toISOString(),
-      updated_at: now.toISOString(),
-      trial_status: 'converted', // Successfully converted from trial to paid
-      trial_start: subs[ownerId]?.trial_start,
-      trial_end: subs[ownerId]?.trial_end,
-      selected_plan_id: planId,
-      payment_status: status === 'active' ? 'paid' : 'failed',
-    };
-
-    subs[ownerId] = newSub;
-    saveStoredSubscriptions(subs);
-
-    if (isSupabaseConfigured && supabase) {
-      try {
-        await supabase.from('subscriptions').upsert(
-          {
-            owner_id: ownerId,
-            plan_id: planId,
-            status,
-            base_price: price.basePrice,
-            gst_amount: price.gstAmount,
-            total_price: price.totalAmount,
-            listing_limit: plan.listingLimit === Infinity ? 9999 : plan.listingLimit,
-            current_period_start: now.toISOString(),
-            current_period_end: renewal.toISOString(),
-            payment_method: ref ? 'upi' : 'none',
-            updated_at: now.toISOString(),
-          },
-          { onConflict: 'owner_id' }
-        );
-      } catch (err) {
-        console.warn('Could not persist paid subscription to Supabase:', err);
-      }
-    }
-
-    return newSub;
+  async submitOwnerPaymentRequest(params: {
+    ownerId: string;
+    planId: SubscriptionPlanId;
+    utr: string;
+    receiptFile?: File | null;
+  }): Promise<{ request: PaymentRequest; isPending: boolean }> {
+    return paymentService.submitOwnerPayment(params);
   },
 
   /**
-   * Updates only the subscription status (e.g. on failed payment or cancellation).
+   * Fetches durable payment request history for this owner.
    */
-  async updateSubscriptionStatus(
-    ownerId: string,
-    status: SubscriptionStatus
-  ): Promise<OwnerSubscription> {
-    const subs = getStoredSubscriptions();
-    const existing = subs[ownerId];
-
-    if (!existing) {
-      const selectedPlan = this.getSelectedPlan();
-      return this.createDemoSubscription(ownerId, selectedPlan, status);
-    }
-
-    const updated: OwnerSubscription = {
-      ...existing,
-      status,
-      updated_at: new Date().toISOString(),
-    };
-
-    subs[ownerId] = updated;
-    saveStoredSubscriptions(subs);
-    return updated;
-  },
-
-  /**
-   * Upgrades the owner's subscription to a new plan.
-   */
-  async upgradeSubscription(
-    ownerId: string,
-    newPlanId: SubscriptionPlanId
-  ): Promise<OwnerSubscription> {
-    return this.createDemoSubscription(ownerId, newPlanId, 'active');
+  async getPaymentHistory(ownerId: string): Promise<PaymentRequest[]> {
+    return paymentService.getOwnerPaymentHistory(ownerId);
   },
 
   /**
@@ -507,47 +419,34 @@ export const subscriptionService = {
   async setActiveListingForBasicPlan(
     ownerId: string,
     activeListingId: string
-  ): Promise<OwnerSubscription> {
-    const subs = getStoredSubscriptions();
-    const existing = subs[ownerId];
+  ): Promise<OwnerSubscription | null> {
+    if (!isSupabaseConfigured || !supabase) return null;
 
-    const updated: OwnerSubscription = {
-      ...(existing || {
-        owner_id: ownerId,
-        plan_id: 'basic',
-        status: 'expired',
-        base_price: 0,
-        gst_rate: 0.18,
-        gst_amount: 0,
-        total_price: 0,
-        start_date: new Date().toISOString(),
-        renewal_date: '',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }),
-      active_listing_id: activeListingId,
-      updated_at: new Date().toISOString(),
-    };
+    try {
+      const now = new Date().toISOString();
+      const { data, error } = await supabase
+        .from('subscriptions')
+        .update({
+          active_listing_id: activeListingId,
+          updated_at: now,
+        })
+        .eq('owner_id', ownerId)
+        .select()
+        .single();
 
-    subs[ownerId] = updated;
-    saveStoredSubscriptions(subs);
-
-    if (isSupabaseConfigured && supabase) {
-      try {
-        await supabase
-          .from('subscriptions')
-          .update({ active_listing_id: activeListingId, updated_at: updated.updated_at })
-          .eq('owner_id', ownerId);
-      } catch (e) {
-        // Safe ignore
+      if (!error && data) {
+        return await this.getOwnerSubscription(ownerId);
       }
+    } catch (e) {
+      console.warn('setActiveListingForBasicPlan error:', e);
     }
 
-    return updated;
+    return null;
   },
 
   /**
    * Checks whether the owner can create an additional listing based on their active plan or trial.
+   * Evaluated authoritatively from Supabase data.
    */
   async checkListingCapacity(
     ownerId: string,
@@ -615,11 +514,13 @@ export const subscriptionService = {
       const remaining = Math.max(0, limit - currentCount);
       const canAdd = currentCount < limit;
 
-      let reason = 'Your 30-day free trial has expired and your account has switched to the free Basic plan (1 PG limit).';
+      let reason =
+        'Your 30-day free trial has expired and your account has switched to the free Basic plan (1 PG limit).';
       if (currentCount > 1) {
-        reason = `Your 30-day free trial has expired. The free Basic plan allows 1 active listing, but you have ${currentCount} properties saved. Please select which listing remains active or upgrade to Pro to keep all properties active.`;
+        reason = `Your 30-day free trial has expired. The free Basic plan allows 1 active listing, but you have ${currentCount} properties saved. Please select which listing remains active or renew/upgrade to Pro to keep all properties active.`;
       } else if (!canAdd) {
-        reason = 'The free Basic plan allows 1 active listing. Upgrade to Pro or Pro Plus to list additional accommodations.';
+        reason =
+          'The free Basic plan allows 1 active listing. Upgrade to Pro or Pro Plus to list additional accommodations.';
       }
 
       return {

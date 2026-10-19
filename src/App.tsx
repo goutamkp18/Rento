@@ -61,6 +61,7 @@ import { CheckoutPage } from './pages/owner/CheckoutPage';
 import { AdminDashboardPage } from './pages/admin/AdminDashboardPage';
 import { AdminListingsPage } from './pages/admin/AdminListingsPage';
 import { AdminUsersPage } from './pages/admin/AdminUsersPage';
+import { AdminPaymentsPage } from './pages/admin/AdminPaymentsPage';
 
 export function App() {
   useEffect(() => {
@@ -159,6 +160,7 @@ export function App() {
                       <Route path="dashboard" element={<AdminDashboardPage />} />
                       <Route path="listings" element={<AdminListingsPage />} />
                       <Route path="listings/:id" element={<AdminListingsPage />} />
+                      <Route path="payments" element={<AdminPaymentsPage />} />
                       <Route path="users" element={<AdminUsersPage />} />
                     </Route>
                   </Routes>
