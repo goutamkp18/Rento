@@ -883,20 +883,33 @@ export const authService = {
       console.warn('Profile existence check notice:', err);
     }
 
-    // 2. Dispatch password recovery OTP to the verified existing email
-    const { error: resetErr } = await supabase.auth.resetPasswordForEmail(cleanEmail);
+    // 2. Dispatch password recovery OTP to the verified existing email using the same OTP template as before
+    const { error: otpErr } = await supabase.auth.signInWithOtp({
+      email: cleanEmail,
+      options: {
+        shouldCreateUser: false,
+      },
+    });
 
-    if (resetErr) {
-      if (resetErr.message?.includes('rate limit') || (resetErr as any).status === 429) {
+    if (otpErr) {
+      if (otpErr.message?.includes('rate limit') || (otpErr as any).status === 429) {
         throw new Error('Password reset rate limit exceeded. Please wait a few moments before requesting another code.');
       }
-      throw new Error(resetErr.message || 'Failed to dispatch password recovery code.');
+      // If signups not allowed or OTP delivery issue, try fallback resetPasswordForEmail
+      if (otpErr.message?.includes('Signups not allowed') || (otpErr as any).status === 400) {
+        const { error: resetErr } = await supabase.auth.resetPasswordForEmail(cleanEmail);
+        if (resetErr) {
+          throw new Error(resetErr.message || 'Failed to dispatch password recovery code.');
+        }
+      } else {
+        throw new Error(otpErr.message || 'Failed to dispatch password recovery code.');
+      }
     }
 
     return {
       success: true,
       email: cleanEmail,
-      message: `A 6-digit password recovery code has been sent to ${cleanEmail}.`,
+      message: `A 6-digit verification code has been dispatched to ${cleanEmail}.`,
     };
   },
 
@@ -915,24 +928,8 @@ export const authService = {
       throw new Error('Supabase database connection is not configured.');
     }
 
-    // 1. Verify OTP with type 'recovery'
+    // 1. Verify OTP with type 'email' (matches signInWithOtp template)
     let authError: any = null;
-    const { data: recoveryData, error: recoveryErr } = await supabase.auth.verifyOtp({
-      email: cleanEmail,
-      token: cleanToken,
-      type: 'recovery',
-    });
-
-    if (!recoveryErr && recoveryData?.session) {
-      return {
-        success: true,
-        message: 'Recovery code verified successfully.',
-      };
-    }
-
-    authError = recoveryErr;
-
-    // 2. Fallback: try type 'email'
     const { data: emailData, error: emailErr } = await supabase.auth.verifyOtp({
       email: cleanEmail,
       token: cleanToken,
@@ -946,7 +943,23 @@ export const authService = {
       };
     }
 
-    const finalErr = recoveryErr || emailErr || authError;
+    authError = emailErr;
+
+    // 2. Fallback: try type 'recovery'
+    const { data: recoveryData, error: recoveryErr } = await supabase.auth.verifyOtp({
+      email: cleanEmail,
+      token: cleanToken,
+      type: 'recovery',
+    });
+
+    if (!recoveryErr && recoveryData?.session) {
+      return {
+        success: true,
+        message: 'Recovery code verified successfully.',
+      };
+    }
+
+    const finalErr = emailErr || recoveryErr || authError;
     if (finalErr?.message?.includes('Token has expired or is invalid') || finalErr?.code === 'otp_expired') {
       throw new Error('Invalid or expired verification code. Please check your email or request a new code.');
     }

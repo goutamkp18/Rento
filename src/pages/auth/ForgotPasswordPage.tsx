@@ -19,6 +19,7 @@ import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { authService } from '../../services/authService';
 import { useToast } from '../../context/ToastContext';
+import { supabase, isSupabaseConfigured } from '../../lib/supabase';
 
 type ResetStep = 'email' | 'otp' | 'new_password' | 'success';
 
@@ -38,6 +39,29 @@ export const ForgotPasswordPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   const otpInputRefs = useRef<(HTMLInputElement | null)[]>([]);
+
+  // Auto-detect if user came from a recovery link or recovery session
+  useEffect(() => {
+    if (isSupabaseConfigured && supabase) {
+      // 1. Check existing session with recovery
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session?.user && (window.location.hash.includes('type=recovery') || window.location.href.includes('recovery'))) {
+          setStep('new_password');
+        }
+      });
+
+      // 2. Listen to PASSWORD_RECOVERY event
+      const { data: listener } = supabase.auth.onAuthStateChange((event) => {
+        if (event === 'PASSWORD_RECOVERY') {
+          setStep('new_password');
+        }
+      });
+
+      return () => {
+        listener.subscription.unsubscribe();
+      };
+    }
+  }, []);
 
   // Cooldown timer for Resend OTP
   useEffect(() => {
