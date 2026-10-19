@@ -64,7 +64,7 @@ export const OWNER_SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
       'Priority support as an enterprise benefit',
       'Custom room tier management',
     ],
-    isRecommended: false,
+    isRecommended: true,
     badge: 'Enterprise',
   },
 ];

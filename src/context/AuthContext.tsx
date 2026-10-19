@@ -23,6 +23,23 @@ interface AuthContextType {
     owner_type?: 'individual' | 'property_manager';
     business_name?: string;
   }) => Promise<UserProfile>;
+  initiateSignup: (data: {
+    email: string;
+    password: string;
+    role: 'student' | 'owner';
+    first_name?: string;
+    last_name?: string;
+    full_name?: string;
+    phone?: string;
+    owner_type?: 'individual' | 'property_manager';
+    business_name?: string;
+  }) => Promise<{ success: boolean; email: string; message: string }>;
+  verifySignupOtp: (
+    email: string,
+    token: string,
+    signupData?: any
+  ) => Promise<UserProfile>;
+  resendSignupOtp: (email: string) => Promise<{ success: boolean; message: string }>;
   sendEmailOtp: (email: string) => Promise<{ success: boolean; message: string }>;
   verifyEmailOtp: (email: string, token: string, requestedRole?: UserRole) => Promise<UserProfile>;
   updateProfile: (updates: Partial<UserProfile>) => Promise<UserProfile>;
@@ -201,6 +218,66 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const initiateSignup = async (data: {
+    email: string;
+    password: string;
+    role: 'student' | 'owner';
+    first_name?: string;
+    last_name?: string;
+    full_name?: string;
+    phone?: string;
+    owner_type?: 'individual' | 'property_manager';
+    business_name?: string;
+  }): Promise<{ success: boolean; email: string; message: string }> => {
+    setIsLoading(true);
+    try {
+      const res = await authService.initiateSignup(data);
+      showToast({
+        type: 'success',
+        title: 'Verification Code Sent',
+        message: res.message,
+      });
+      return res;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const verifySignupOtp = async (
+    email: string,
+    token: string,
+    signupData?: any
+  ): Promise<UserProfile> => {
+    setIsLoading(true);
+    try {
+      const profile = await authService.completeSignupWithOtp(email, token, signupData);
+      setUser(profile);
+      showToast({
+        type: 'success',
+        title: `Welcome to Rento, ${profile.full_name}!`,
+        message: `Email verified successfully as ${profile.role.toUpperCase()}`,
+      });
+      return profile;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const resendSignupOtp = async (email: string): Promise<{ success: boolean; message: string }> => {
+    setIsLoading(true);
+    try {
+      const res = await authService.resendSignupOtp(email);
+      showToast({
+        type: 'success',
+        title: 'New Code Dispatched',
+        message: res.message,
+      });
+      return res;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const sendEmailOtp = async (email: string): Promise<{ success: boolean; message: string }> => {
     setIsLoading(true);
     try {
@@ -263,6 +340,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setIntendedDestination,
         login,
         signup,
+        initiateSignup,
+        verifySignupOtp,
+        resendSignupOtp,
         sendEmailOtp,
         verifyEmailOtp,
         updateProfile,

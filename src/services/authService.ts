@@ -323,6 +323,225 @@ export const authService = {
     throw new Error('Invalid credentials. Please verify your email and password.');
   },
 
+  /**
+   * Step 1 of Signup: Validates user details and registers pending account in Supabase.
+   * Supabase dispatches a 6-digit confirmation OTP to the user's email address.
+   */
+  async initiateSignup(data: {
+    email: string;
+    password: string;
+    role: 'student' | 'owner';
+    first_name?: string;
+    last_name?: string;
+    full_name?: string;
+    phone?: string;
+    owner_type?: 'individual' | 'property_manager';
+    business_name?: string;
+  }): Promise<{ success: boolean; email: string; message: string }> {
+    if ((data.role as any) === 'admin') {
+      throw new Error('Public registration cannot grant administrator privileges.');
+    }
+
+    if (!isSupabaseConfigured || !supabase) {
+      throw new Error('Supabase database connection is not configured.');
+    }
+
+    const cleanEmail = data.email.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      throw new Error('Please enter a valid email address.');
+    }
+
+    if (!data.password || data.password.length < 6) {
+      throw new Error('Password must be at least 6 characters long.');
+    }
+
+    const calculatedFullName =
+      data.full_name?.trim() ||
+      [data.first_name?.trim(), data.last_name?.trim()].filter(Boolean).join(' ') ||
+      cleanEmail.split('@')[0];
+
+    const { data: authData, error } = await supabase.auth.signUp({
+      email: cleanEmail,
+      password: data.password,
+      options: {
+        data: {
+          full_name: calculatedFullName,
+          first_name: data.first_name,
+          last_name: data.last_name,
+          role: data.role,
+          phone: data.phone,
+          owner_type: data.owner_type,
+          business_name: data.business_name,
+        },
+      },
+    });
+
+    if (error) {
+      if (error.message?.includes('rate limit') || (error as any).status === 429) {
+        throw new Error('Email verification rate limit exceeded. Please wait a few moments before trying again.');
+      }
+      throw new Error(`Registration failed: ${error.message}`);
+    }
+
+    if (authData.user && authData.user.identities && authData.user.identities.length === 0) {
+      throw new Error('An account with this email address already exists. Please sign in with your email and password.');
+    }
+
+    return {
+      success: true,
+      email: cleanEmail,
+      message: `A 6-digit verification code has been dispatched to ${cleanEmail}.`,
+    };
+  },
+
+  /**
+   * Step 2 of Signup: Verifies the 6-digit OTP code dispatched to the user's email.
+   * On success, confirms the account, creates the profile, and logs the user in.
+   */
+  async completeSignupWithOtp(
+    email: string,
+    token: string,
+    signupData?: {
+      first_name?: string;
+      last_name?: string;
+      full_name?: string;
+      role?: 'student' | 'owner';
+      phone?: string;
+      owner_type?: 'individual' | 'property_manager';
+      business_name?: string;
+    }
+  ): Promise<UserProfile> {
+    if (!isSupabaseConfigured || !supabase) {
+      throw new Error('Supabase database connection is not configured.');
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanToken = token.trim();
+
+    if (!cleanEmail || !cleanToken) {
+      throw new Error('Please enter both your email address and the 6-digit verification code.');
+    }
+
+    // 1. Try verifying with type 'signup' (the official Supabase Auth signup confirmation)
+    let verifiedUser = null;
+    let authError: any = null;
+
+    const { data: verifyData, error: verifyErr } = await supabase.auth.verifyOtp({
+      email: cleanEmail,
+      token: cleanToken,
+      type: 'signup',
+    });
+
+    if (!verifyErr && verifyData?.user) {
+      verifiedUser = verifyData.user;
+    } else {
+      authError = verifyErr;
+      // Fallback: try with type 'email'
+      const { data: fallbackData, error: fallbackErr } = await supabase.auth.verifyOtp({
+        email: cleanEmail,
+        token: cleanToken,
+        type: 'email',
+      });
+      if (!fallbackErr && fallbackData?.user) {
+        verifiedUser = fallbackData.user;
+        authError = null;
+      } else {
+        authError = fallbackErr || verifyErr;
+      }
+    }
+
+    if (authError || !verifiedUser) {
+      if (authError?.message?.includes('Token has expired or is invalid') || authError?.code === 'otp_expired') {
+        throw new Error('Invalid or expired verification code. Please check your email or request a new code.');
+      }
+      throw new Error(authError?.message || 'Verification failed. Please check the code and try again.');
+    }
+
+    // 2. Synchronize profile in Supabase profiles table
+    const meta = verifiedUser.user_metadata || {};
+    const effectiveRole = (signupData?.role || meta.role || 'student') as 'student' | 'owner';
+    const effectiveFullName =
+      signupData?.full_name?.trim() ||
+      [signupData?.first_name?.trim(), signupData?.last_name?.trim()].filter(Boolean).join(' ') ||
+      meta.full_name ||
+      cleanEmail.split('@')[0];
+
+    const profile: UserProfile = {
+      id: verifiedUser.id,
+      email: verifiedUser.email || cleanEmail,
+      full_name: effectiveFullName,
+      first_name: signupData?.first_name || meta.first_name,
+      last_name: signupData?.last_name || meta.last_name,
+      role: effectiveRole,
+      phone: signupData?.phone || meta.phone || '',
+      owner_type: signupData?.owner_type || meta.owner_type,
+      business_name: signupData?.business_name || meta.business_name,
+      created_at: verifiedUser.created_at,
+    };
+
+    try {
+      const { data: insertedProfile } = await supabase
+        .from('profiles')
+        .upsert(
+          {
+            id: verifiedUser.id,
+            email: profile.email,
+            full_name: profile.full_name,
+            first_name: profile.first_name,
+            last_name: profile.last_name,
+            role: profile.role,
+            phone: profile.phone || '',
+            owner_type: profile.owner_type,
+            business_name: profile.business_name,
+          },
+          { onConflict: 'id' }
+        )
+        .select('*')
+        .single();
+
+      if (insertedProfile) {
+        saveStoredUser(insertedProfile as UserProfile);
+        return insertedProfile as UserProfile;
+      }
+    } catch (pErr) {
+      console.warn('Profile synchronization notice:', pErr);
+    }
+
+    saveStoredUser(profile);
+    return profile;
+  },
+
+  /**
+   * Resend signup verification OTP to the user's email address
+   */
+  async resendSignupOtp(email: string): Promise<{ success: boolean; message: string }> {
+    if (!isSupabaseConfigured || !supabase) {
+      throw new Error('Supabase database connection is not configured.');
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      throw new Error('Please enter a valid email address.');
+    }
+
+    const { error } = await supabase.auth.resend({
+      type: 'signup',
+      email: cleanEmail,
+    });
+
+    if (error) {
+      if (error.message?.includes('rate limit') || (error as any).status === 429) {
+        throw new Error('Please wait a moment before requesting another verification code.');
+      }
+      throw new Error(error.message || 'Failed to resend verification code.');
+    }
+
+    return {
+      success: true,
+      message: `A fresh 6-digit verification code has been dispatched to ${cleanEmail}.`,
+    };
+  },
+
   async signup(data: {
     email: string;
     full_name?: string;
@@ -369,27 +588,13 @@ export const authService = {
 
     if (error) {
       if (error.message?.includes('rate limit') || (error as any).status === 429) {
-        throw new Error(
-          "Supabase email rate limit exceeded. To enable instant registration without emails for this demo, disable 'Confirm email' in the Supabase Dashboard: Authentication -> Providers -> Email -> toggle 'Confirm email' OFF."
-        );
+        throw new Error('Email verification rate limit exceeded. Please wait a few moments before trying again.');
       }
       throw new Error(`Registration failed: ${error.message}`);
     }
 
     if (!authData.user) {
       throw new Error('Failed to create account in Supabase.');
-    }
-
-    // If session is not returned immediately (e.g. if email confirmation is on or delayed), try immediate sign in
-    if (!authData.session && data.password) {
-      try {
-        await supabase.auth.signInWithPassword({
-          email: data.email.trim(),
-          password: data.password,
-        });
-      } catch {
-        // If email confirmation is still enabled in Supabase, signIn will indicate that
-      }
     }
 
     // Retrieve or upsert matching profiles row using Auth user's UUID
