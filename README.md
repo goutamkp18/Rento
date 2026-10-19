@@ -5,14 +5,7 @@
 **Rento** is a student accommodation discovery marketplace and PG management SaaS designed to connect students with paying guest accommodations near colleges across Bengaluru. It also helps PG owners manage property listings, room availability, bed inventory, and student enquiries.
 
 🔗 **Live Demo:** [rentoai.vercel.app](https://rentoai.vercel.app/)
-owner id:demonheart031@gmail.com
-owner pass:Goutam@2006
 
-studen id:goutampoojari031@gmail.com
-student pass:Goutam@2006
-
-admin id:Inside website
-admin pass:Inside Website
 
 ---
 
