@@ -91,12 +91,14 @@ export const ocrService = {
       detectedApp = 'State Bank of India';
     }
 
-    // 2. Extract Transaction Reference / UTR
+    // 2. Extract Transaction Reference / UTR / Transaction ID
     let extractedUtr: string | undefined;
 
-    // Pattern A: Labeled UTR / UPI Ref / RRN
+    // Pattern A: Explicitly labeled Transaction ID / UTR / UPI Ref / RRN / Bank Ref
+    // Matches: "Transaction ID T2610101024439827156", "Transaction ID: T2610101024439827156",
+    // "UPI transaction ID 428912345678", "UTR: 428912345678", "Google transaction ID", etc.
     const labeledUtrMatch = normalizedRaw.match(
-      /(?:UPI\s*(?:Transaction\s*ID|Ref(?:\s*No|\s*ID)?)|UTR(?:\s*No)?|Txn\s*ID|RRN|Ref\s*No)[\s:#\-_/]+([A-Za-z0-9]{10,18})\b/i
+      /(?:(?:UPI|Google\s*(?:Pay)?|PhonePe|Paytm|Bank)?\s*(?:Transaction\s*ID|Txn\s*ID|Transaction\s*Ref(?:erence)?)|UTR(?:\s*No|\s*Number)?|UPI\s*Ref(?:\s*No|\s*ID)?|Ref\s*(?:No|ID|Number)|Reference\s*(?:No|ID|Number)|RRN|Bank\s*Ref(?:erence)?(?:\s*No)?|Payment\s*ID)[\s:#\-_/]+([A-Za-z0-9]{10,35})\b/i
     );
     if (labeledUtrMatch && labeledUtrMatch[1]) {
       const candidate = normalizeUtr(labeledUtrMatch[1]);
@@ -105,7 +107,45 @@ export const ocrService = {
       }
     }
 
-    // Pattern B: Look for 12-digit numeric sequences
+    // Pattern B: Line-by-line inspection (e.g. "Transaction ID" on one line, value on the next line)
+    if (!extractedUtr) {
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (/(?:Transaction\s*ID|Txn\s*ID|UTR|UPI\s*Ref|RRN|Reference)/i.test(line)) {
+          // Check same line first
+          const sameLineMatch = line.match(/(?:Transaction\s*ID|Txn\s*ID|UTR|UPI\s*Ref|RRN|Reference)[\s:#\-_/]*([A-Za-z0-9]{10,35})/i);
+          if (sameLineMatch && sameLineMatch[1]) {
+            const cand = normalizeUtr(sameLineMatch[1]);
+            if (validateUtr(cand).isValid) {
+              extractedUtr = cand;
+              break;
+            }
+          }
+          // Check next line
+          if (i + 1 < lines.length) {
+            const nextLine = lines[i + 1].trim();
+            const cand = normalizeUtr(nextLine);
+            if (cand && validateUtr(cand).isValid) {
+              extractedUtr = cand;
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    // Pattern C: Google Pay / PhonePe format standalone (e.g. T2610101024439827156)
+    if (!extractedUtr) {
+      const gpayPhonePeMatch = normalizedRaw.match(/\b(T\d{16,25})\b/i);
+      if (gpayPhonePeMatch && gpayPhonePeMatch[1]) {
+        const candidate = normalizeUtr(gpayPhonePeMatch[1]);
+        if (validateUtr(candidate).isValid) {
+          extractedUtr = candidate;
+        }
+      }
+    }
+
+    // Pattern D: Look for standard 12-digit numeric sequences
     if (!extractedUtr) {
       const twelveDigitMatches = normalizedRaw.match(/\b\d{12}\b/g);
       if (twelveDigitMatches && twelveDigitMatches.length > 0) {
@@ -118,7 +158,7 @@ export const ocrService = {
       }
     }
 
-    // Pattern C: If expectedUtr was provided, check if it appears in raw text
+    // Pattern E: If expectedUtr was provided, check if it appears in raw text
     if (!extractedUtr && expectedUtr) {
       const cleanExpected = normalizeUtr(expectedUtr);
       if (cleanExpected && normalizedRaw.toUpperCase().includes(cleanExpected)) {
@@ -195,12 +235,12 @@ export const ocrService = {
       }
     }
 
-    // UTR Check
+    // Reference (UTR / Transaction ID) Check
     if (expectedUtr && extractedUtr) {
       const cleanExpected = normalizeUtr(expectedUtr);
       if (extractedUtr !== cleanExpected) {
         mismatchReasons.push(
-          `UTR Mismatch: Screenshot appears to show reference "${extractedUtr}", but form submitted "${cleanExpected}".`
+          `Reference Mismatch: Screenshot appears to show reference "${extractedUtr}", but form submitted "${cleanExpected}".`
         );
       }
     }

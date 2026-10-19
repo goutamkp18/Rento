@@ -151,22 +151,22 @@ export const StudentPaywallModal: React.FC<StudentPaywallModalProps> = ({
         }
         showToast({
           type: 'success',
-          title: 'UTR Verified via OCR',
-          message: `Detected UTR ${result.extractedUtr} from receipt.`,
+          title: 'Reference Verified via OCR',
+          message: `Detected ${result.extractedUtr.startsWith('T') && result.extractedUtr.length > 15 ? 'Transaction ID' : 'UTR'} ${result.extractedUtr} from receipt.`,
         });
       } else {
-        // No UTR detected in the screenshot
+        // No UTR or Transaction ID detected in the screenshot
         setReceiptFile(null);
         if (fileInputRef.current) {
           fileInputRef.current.value = '';
         }
         setInvalidImageWarning(
-          'Invalid image: No UTR number found in this screenshot. Please send the payment image with a visible 12-digit UTR/UPI reference number.'
+          'Invalid image: No UTR or Transaction ID found in this screenshot. Please send the payment image with a visible Transaction ID or 12-digit UTR/UPI reference number.'
         );
         showToast({
           type: 'error',
           title: 'Invalid Image',
-          message: 'No UTR number found in screenshot. Please send the payment image with UTR number.',
+          message: 'No UTR or Transaction ID found in screenshot. Please send the payment image with a visible reference.',
         });
       }
     } catch (ocrErr) {
@@ -203,24 +203,24 @@ export const StudentPaywallModal: React.FC<StudentPaywallModalProps> = ({
       showToast({
         type: 'info',
         title: 'Scanning Image',
-        message: 'Please wait while we check your screenshot for the UTR number...',
+        message: 'Please wait while we check your screenshot for the UTR or Transaction ID...',
       });
       return;
     }
 
     if (receiptFile && !ocrDetectedUtr) {
       setInvalidImageWarning(
-        'Invalid image: No UTR number found in this screenshot. Please send the payment image with a visible 12-digit UTR/UPI reference number.'
+        'Invalid image: No UTR or Transaction ID found in this screenshot. Please send the payment image with a visible Transaction ID or 12-digit UTR/UPI reference number.'
       );
       return;
     }
 
     if (!utrValidation.isValid) {
-      const errMsg = utrValidation.error || 'Please enter a valid 12-digit UPI transaction reference (UTR).';
+      const errMsg = utrValidation.error || 'Please enter a valid UPI transaction reference (UTR or Transaction ID).';
       setSubmissionError(errMsg);
       showToast({
         type: 'error',
-        title: 'Invalid UTR Format',
+        title: 'Invalid Reference Format',
         message: errMsg,
       });
       return;
@@ -500,7 +500,7 @@ export const StudentPaywallModal: React.FC<StudentPaywallModalProps> = ({
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider">
-                    Step 2: Enter UPI Transaction Reference (UTR) <span className="text-red-400">*</span>
+                    Step 2: Enter UPI Reference (UTR / Transaction ID) <span className="text-red-400">*</span>
                   </label>
                   <button
                     type="button"
@@ -508,7 +508,7 @@ export const StudentPaywallModal: React.FC<StudentPaywallModalProps> = ({
                     className="text-[10px] text-brand-400 hover:text-brand-300 flex items-center gap-1"
                   >
                     <HelpCircle className="w-3 h-3" />
-                    <span>Where to find UTR?</span>
+                    <span>Where to find UTR / Transaction ID?</span>
                     {showAppGuide ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                   </button>
                 </div>
@@ -519,7 +519,7 @@ export const StudentPaywallModal: React.FC<StudentPaywallModalProps> = ({
                     setUtr(e.target.value);
                     if (submissionError) setSubmissionError(null);
                   }}
-                  placeholder="e.g. 428912345678"
+                  placeholder="e.g. 428912345678 or T2610101024439827156"
                   className={`font-mono uppercase tracking-wider ${
                     utr && !utrValidation.isValid
                       ? 'border-red-500/50 focus:border-red-500 bg-red-950/20'
@@ -539,7 +539,7 @@ export const StudentPaywallModal: React.FC<StudentPaywallModalProps> = ({
                         <span>
                           {utrValidation.format === 'npci_12_digit'
                             ? `Valid 12-digit UPI UTR (${utrValidation.detectedAppHint || 'NPCI Format'})`
-                            : 'Valid 10–18 character Bank Alphanumeric Reference'}
+                            : `Valid Reference (${utrValidation.detectedAppHint || 'Alphanumeric 10–35'})`}
                         </span>
                       </div>
                     ) : (
@@ -554,7 +554,7 @@ export const StudentPaywallModal: React.FC<StudentPaywallModalProps> = ({
                 {/* Expandable UPI App Reference Guide */}
                 {showAppGuide && (
                   <div className="p-3 rounded-xl bg-navy-900 border border-navy-750 space-y-2 text-[11px] text-slate-300 animate-fadeIn">
-                    <p className="font-bold text-white text-xs">Finding Your UPI Reference (UTR):</p>
+                    <p className="font-bold text-white text-xs">Finding Your UPI Reference (UTR / Transaction ID):</p>
                     <div className="space-y-1.5">
                       {UPI_APP_UTR_GUIDE.map(app => (
                         <div key={app.appName} className="flex flex-col sm:flex-row sm:items-baseline gap-1 sm:gap-2">
@@ -571,7 +571,7 @@ export const StudentPaywallModal: React.FC<StudentPaywallModalProps> = ({
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                    Attach Payment Screenshot / Receipt (with UTR)
+                    Attach Payment Screenshot / Receipt (with UTR or Transaction ID)
                   </label>
                   <span className="text-[10px] text-brand-400 font-mono">OCR Scanned &amp; Protected</span>
                 </div>
@@ -594,7 +594,7 @@ export const StudentPaywallModal: React.FC<StudentPaywallModalProps> = ({
                     {isScanningReceipt ? (
                       <div className="flex items-center gap-2 text-brand-300 font-medium py-0.5">
                         <Loader2 className="w-4 h-4 text-brand-400 animate-spin" />
-                        <span>Scanning screenshot with OCR for UTR number...</span>
+                        <span>Scanning screenshot with OCR for UTR or Transaction ID...</span>
                       </div>
                     ) : receiptFile ? (
                       <div className="flex items-center justify-between w-full px-2">
@@ -697,15 +697,15 @@ export const StudentPaywallModal: React.FC<StudentPaywallModalProps> = ({
         </div>
 
         <div className="space-y-2">
-          <h3 className="text-lg font-bold text-white">No UTR Number Found in Screenshot</h3>
+          <h3 className="text-lg font-bold text-white">No UTR or Transaction ID Found in Screenshot</h3>
           <p className="text-xs text-slate-300 leading-relaxed">
-            Our automated OCR scanner could not detect any 12-digit UPI transaction reference (UTR) or payment reference in the uploaded image.
+            Our automated OCR scanner could not detect any 12-digit UPI transaction reference (UTR) or Transaction ID in the uploaded image.
           </p>
           <div className="p-3.5 rounded-xl bg-rose-950/70 border border-rose-500/40 text-rose-200 text-xs font-semibold leading-relaxed">
-            ⚠️ Invalid image: Please send the payment image with a visible UTR number.
+            ⚠️ Invalid image: Please send the payment image with a visible UTR or Transaction ID.
           </div>
           <p className="text-[11px] text-slate-400">
-            Please take a full screenshot of the completed payment receipt from Google Pay, PhonePe, Paytm, or your banking app where the 12-digit UTR/RRN is clearly visible.
+            Please take a full screenshot of the completed payment receipt from Google Pay, PhonePe, Paytm, or your banking app where the Transaction ID (e.g. T26...) or 12-digit UTR/RRN is clearly visible.
           </p>
         </div>
 
@@ -716,7 +716,7 @@ export const StudentPaywallModal: React.FC<StudentPaywallModalProps> = ({
             className="w-full bg-rose-600 hover:bg-rose-500 text-white font-bold"
             onClick={() => setInvalidImageWarning(null)}
           >
-            Upload Payment Image with UTR
+            Upload Payment Image with Reference
           </Button>
         </div>
       </div>

@@ -356,24 +356,24 @@ BEGIN
     RAISE EXCEPTION 'Authentication required to submit payment proof';
   END IF;
 
-  -- Normalize UTR: remove prefixes like UTR:, UPI:, spaces, dashes, dots, convert to uppercase
-  v_clean_utr := UPPER(REGEXP_REPLACE(REGEXP_REPLACE(TRIM(p_utr), '^(UTR|UPI|REF|TXN)[:\-_/\s]*', '', 'i'), '[\s\-_.]', '', 'g'));
+  -- Normalize UTR / Transaction ID
+  v_clean_utr := UPPER(REGEXP_REPLACE(REGEXP_REPLACE(TRIM(p_utr), '^(?:(?:UPI\s*)?(?:TRANSACTION\s*ID|TXN\s*(?:ID)?)|UTR(?:\s*NO|\s*NUMBER)?|UPI\s*REF(?:\s*NO|\s*ID)?|REF(?:\s*NO|\s*ID)?|RRN)[:\-_/\s]*', '', 'i'), '[\s\-_.]', '', 'g'));
 
   IF v_clean_utr IS NULL OR LENGTH(v_clean_utr) < 10 THEN
-    RAISE EXCEPTION 'Invalid UTR format. Standard UPI transaction reference must be at least 10 characters (standard NPCI is 12 digits).';
+    RAISE EXCEPTION 'Invalid reference format. Standard UPI transaction reference or Transaction ID must be at least 10 characters (standard NPCI is 12 digits).';
   END IF;
 
-  IF LENGTH(v_clean_utr) > 18 THEN
-    RAISE EXCEPTION 'Invalid UTR format. Maximum allowed length is 18 characters.';
+  IF LENGTH(v_clean_utr) > 35 THEN
+    RAISE EXCEPTION 'Invalid reference format. Maximum allowed length is 35 characters.';
   END IF;
 
-  IF v_clean_utr !~ '^[A-Z0-9]{10,18}$' THEN
-    RAISE EXCEPTION 'Invalid characters in UTR. Only alphanumeric characters are allowed.';
+  IF v_clean_utr !~ '^[A-Z0-9]{10,35}$' THEN
+    RAISE EXCEPTION 'Invalid characters in reference. Only alphanumeric characters are allowed.';
   END IF;
 
   -- Reject known sample/dummy strings
   IF v_clean_utr IN ('123456789012', '000000000000', '111111111111', '999999999999', 'TEST12345678', 'ABCDEF123456', 'UTR123456789', 'DEMO12345678') OR v_clean_utr ~ '^(.)\1{9,}$' THEN
-    RAISE EXCEPTION 'Invalid or sample transaction reference. Please provide the authentic UTR from your UPI payment receipt.';
+    RAISE EXCEPTION 'Invalid or sample transaction reference. Please provide the authentic UTR or Transaction ID from your payment receipt.';
   END IF;
 
   -- Verify payment request exists and belongs to this user

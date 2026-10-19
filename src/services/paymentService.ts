@@ -947,7 +947,7 @@ export const paymentService = {
       if (!line.trim()) continue;
 
       const twelveDigitMatch = line.match(/\b\d{12}\b/);
-      const alphanumericMatch = line.match(/\b[A-Za-z0-9]{10,18}\b/);
+      const alphanumericMatch = line.match(/\b[A-Za-z0-9]{10,35}\b/);
       const candidateUtr = normalizeUtr(
         twelveDigitMatch ? twelveDigitMatch[0] : (alphanumericMatch ? alphanumericMatch[0] : '')
       );
