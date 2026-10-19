@@ -102,6 +102,7 @@ export function App() {
                     <Route path="/login" element={<LoginPage />} />
                     <Route path="/signup" element={<SignupPage />} />
                     <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+                    <Route path="/reset-password" element={<ForgotPasswordPage />} />
 
                     {/* Dedicated Administrator Authentication Gateway */}
                     <Route path="/admin/login" element={<AdminLoginPage />} />

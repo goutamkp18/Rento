@@ -847,6 +847,146 @@ export const authService = {
     throw new Error('Please sign in or create an account with your genuine credentials.');
   },
 
+  /**
+   * Step 1 of Password Reset: Checks if email exists in database, then sends recovery OTP
+   */
+  async requestPasswordResetOtp(email: string): Promise<{ success: boolean; email: string; message: string }> {
+    const cleanEmail = email.trim().toLowerCase();
+
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      throw new Error('Please enter a valid email address.');
+    }
+
+    if (!isSupabaseConfigured || !supabase) {
+      throw new Error('Supabase database connection is not configured.');
+    }
+
+    // 1. Verify that this email exists in the database
+    try {
+      const { data: profile, error: profileErr } = await supabase
+        .from('profiles')
+        .select('id, email, full_name, role')
+        .ilike('email', cleanEmail)
+        .maybeSingle();
+
+      if (profileErr) {
+        console.warn('Error querying profiles:', profileErr);
+      }
+
+      if (!profile) {
+        throw new Error('No registered account was found with this email address. Please check your email or create a new account.');
+      }
+    } catch (err: any) {
+      if (err.message && err.message.includes('No registered account')) {
+        throw err;
+      }
+      console.warn('Profile existence check notice:', err);
+    }
+
+    // 2. Dispatch password recovery OTP to the verified existing email
+    const { error: resetErr } = await supabase.auth.resetPasswordForEmail(cleanEmail);
+
+    if (resetErr) {
+      if (resetErr.message?.includes('rate limit') || (resetErr as any).status === 429) {
+        throw new Error('Password reset rate limit exceeded. Please wait a few moments before requesting another code.');
+      }
+      throw new Error(resetErr.message || 'Failed to dispatch password recovery code.');
+    }
+
+    return {
+      success: true,
+      email: cleanEmail,
+      message: `A 6-digit password recovery code has been sent to ${cleanEmail}.`,
+    };
+  },
+
+  /**
+   * Step 2 of Password Reset: Verifies the 6-digit recovery OTP code
+   */
+  async verifyPasswordResetOtp(email: string, token: string): Promise<{ success: boolean; message: string }> {
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanToken = token.trim();
+
+    if (!cleanEmail || !cleanToken) {
+      throw new Error('Please enter both your email address and the 6-digit recovery code.');
+    }
+
+    if (!isSupabaseConfigured || !supabase) {
+      throw new Error('Supabase database connection is not configured.');
+    }
+
+    // 1. Verify OTP with type 'recovery'
+    let authError: any = null;
+    const { data: recoveryData, error: recoveryErr } = await supabase.auth.verifyOtp({
+      email: cleanEmail,
+      token: cleanToken,
+      type: 'recovery',
+    });
+
+    if (!recoveryErr && recoveryData?.session) {
+      return {
+        success: true,
+        message: 'Recovery code verified successfully.',
+      };
+    }
+
+    authError = recoveryErr;
+
+    // 2. Fallback: try type 'email'
+    const { data: emailData, error: emailErr } = await supabase.auth.verifyOtp({
+      email: cleanEmail,
+      token: cleanToken,
+      type: 'email',
+    });
+
+    if (!emailErr && emailData?.session) {
+      return {
+        success: true,
+        message: 'Recovery code verified successfully.',
+      };
+    }
+
+    const finalErr = recoveryErr || emailErr || authError;
+    if (finalErr?.message?.includes('Token has expired or is invalid') || finalErr?.code === 'otp_expired') {
+      throw new Error('Invalid or expired verification code. Please check your email or request a new code.');
+    }
+
+    throw new Error(finalErr?.message || 'Verification failed. Please check the code and try again.');
+  },
+
+  /**
+   * Step 3 of Password Reset: Updates the user's password in the database
+   */
+  async completePasswordReset(newPassword: string): Promise<{ success: boolean; message: string }> {
+    if (!newPassword || newPassword.length < 6) {
+      throw new Error('New password must be at least 6 characters long.');
+    }
+
+    if (!isSupabaseConfigured || !supabase) {
+      throw new Error('Supabase database connection is not configured.');
+    }
+
+    const { error } = await supabase.auth.updateUser({
+      password: newPassword,
+    });
+
+    if (error) {
+      throw new Error(`Failed to update password: ${error.message}`);
+    }
+
+    // Sign out of temporary recovery session so user can log in cleanly with new credentials
+    try {
+      await supabase.auth.signOut();
+    } catch {
+      // Ignored
+    }
+
+    return {
+      success: true,
+      message: 'Your password has been successfully updated.',
+    };
+  },
+
   async logout(): Promise<void> {
     if (isSupabaseConfigured && supabase) {
       try {
